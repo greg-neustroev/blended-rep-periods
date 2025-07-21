@@ -1,0 +1,2 @@
+id,carrier_in,efficiency_in,efficiency_out
+Electrolyzer,electricity,1,0.65

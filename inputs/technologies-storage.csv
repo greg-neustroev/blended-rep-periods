@@ -1,0 +1,4 @@
+id,is_seasonal,efficiency_in,efficiency_out
+Battery,FALSE,0.955,0.955
+Hydro_Reservoir,TRUE,1,1
+PHS,TRUE,0.875,0.875

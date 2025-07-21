@@ -1,0 +1,14 @@
+id,type,carrier_out
+ENS,generation,electricity
+Wind_Onshore,generation,electricity
+Wind_Offshore,generation,electricity
+Solar,generation,electricity
+Hydro,generation,electricity
+Coal,generation,electricity
+Nuclear,generation,electricity
+Gas,generation,electricity
+Battery,storage,electricity
+Hydro_Reservoir,storage,electricity
+PHS,storage,electricity
+Electrolyzer,conversion,hydrogen
+SMR_CCS,generation,hydrogen
