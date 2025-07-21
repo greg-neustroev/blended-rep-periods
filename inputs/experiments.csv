@@ -1,0 +1,3 @@
+name,input_dir,n_rep_periods,period_length,clustering_type,distance,weight_type,niters,learning_rate
+tyndp2024_baseline,tyndp2024,1,8760,k_means,Euclidean,dirac,1000,0.001
+tyndp2024_10_k_means_euclidian_dirac,tyndp2024,10,24,k_means,Euclidean,dirac,1000,0.001
