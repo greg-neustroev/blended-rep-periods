@@ -1,7 +1,7 @@
 export run_experiment
 
 function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericModel{Float64})
-    con = experiment_data.db_connection
+    connection = experiment_data.db_connection
     input_dir = experiment_data.input_dir
     n_rep_periods = experiment_data.n_rep_periods
     period_length = experiment_data.period_length
@@ -11,35 +11,35 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
 
     # read all the data from the CSV files
     @info "Reading data from CSV files"
-    read_data_from_dir(con, input_dir, period_length)
+    read_data_from_dir(connection, input_dir, period_length)
 
     # Creating scalars
-    operations_weight = DBInterface.execute(con,
+    operations_weight = DBInterface.execute(connection,
                             "SELECT value FROM scalars WHERE scalar='operations_weight'"
                         ) |> first |> first
-    timestep_duration = DBInterface.execute(con,
+    timestep_duration = DBInterface.execute(connection,
                             "SELECT value FROM scalars WHERE scalar='timestep_duration'"
                         ) |> first |> first
     # Create indexing sets
-    N = get_index_set(con, "locations")
-    X = get_index_set(con, "carriers")
-    L = get_index_set(con, "transmission_lines")
-    T = get_index_set(con, "technologies")
-    A = get_index_set(con, "assets")
-    A_inv = get_index_set(con, "investable_assets")
-    A_not = get_index_set(con, "non_investable_assets")
-    G = get_index_set(con, "generation_assets")
-    S = get_index_set(con, "storage_assets")
-    S_ST = get_index_set(con, "short_term_storage_assets")
-    S_seas = get_index_set(con, "seasonal_storage_assets")
-    S_seas_in = get_index_set(con, "seasonal_storage_assets_can_charge")
-    C = get_index_set(con, "conversion_assets")
+    N = get_index_set(connection, "locations")
+    X = get_index_set(connection, "carriers")
+    L = get_index_set(connection, "transmission_lines")
+    T = get_index_set(connection, "technologies")
+    A = get_index_set(connection, "assets")
+    A_inv = get_index_set(connection, "investable_assets")
+    A_not = get_index_set(connection, "non_investable_assets")
+    G = get_index_set(connection, "generation_assets")
+    S = get_index_set(connection, "storage_assets")
+    S_ST = get_index_set(connection, "short_term_storage_assets")
+    S_seas = get_index_set(connection, "seasonal_storage_assets")
+    S_seas_in = get_index_set(connection, "seasonal_storage_assets_can_charge")
+    C = get_index_set(connection, "conversion_assets")
     R = collect(1:n_rep_periods)
-    H = get_index_set(con, "timesteps")
-    D = get_index_set(con, "periods")
+    H = get_index_set(connection, "timesteps")
+    D = get_index_set(connection, "periods")
 
     # Clustering
-    clustering_df = DuckDB.query(con, "SELECT * FROM profiles ORDER BY period, timestep, id") |> DataFrame
+    clustering_df = DuckDB.query(connection, "SELECT * FROM profiles ORDER BY period, timestep, id") |> DataFrame
 
     @info "Finding $n_rep_periods $clustering_type representative periods"
     clustering_method = if clustering_type ≡ :hull
@@ -71,7 +71,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     weight = clustering_result.weight_matrix
     rp_weight = sum(weight, dims=1)
     rp_weight .*= operations_weight
-    DuckDB.register_data_frame(con, clustering_result.profiles, "rp_profiles")
+    DuckDB.register_data_frame(connection, clustering_result.profiles, "rp_profiles")
 
     # Create model
 
@@ -90,7 +90,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     @info "Creating objective"
     # Build expressions for costs
     investment_data = DBInterface.execute(
-        con,
+        connection,
         "SELECT id, unit_capacity, cost FROM investable_assets"
     )
     cost_of_investment = @expression(
@@ -104,11 +104,11 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     )
 
     operations_data = DBInterface.execute(
-        con,
+        connection,
         "SELECT id, variable_cost FROM generation_assets"
     )
     spillage_data = DBInterface.execute(
-        con,
+        connection,
         "SELECT id, spillage_cost FROM seasonal_storage_assets"
     )
 
@@ -141,7 +141,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     @info "Adding balance constraints"
     ### first build expressions
     power_out_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT a.id, a.location, t.carrier_out
         FROM assets AS a
@@ -156,7 +156,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         end
     end
     power_in_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT a.id, a.location, t.carrier_out as carrier_in
         FROM seasonal_storage_assets_can_charge AS a
@@ -184,7 +184,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     @expression(model, total_flow_in[N, X, R, H], AffExpr(0.0))
     @expression(model, total_flow_out[N, X, R, H], AffExpr(0.0))
     transmission_line_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT id, "from", "to", carrier
         FROM transmission_lines
@@ -198,7 +198,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     end
 
     demand_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT
         d.location, d.carrier, t.rep_period, t.timestep,
@@ -233,7 +233,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
 
     @info "Adding storage constraints"
     short_term_storage_asset_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT
         s.id, t.rep_period, t.timestep, s.efficiency_in, s.efficiency_out,
@@ -272,7 +272,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         end
     end
     seasonal_storage_can_charge_asset_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT
         s.id, t.rep_period, t.timestep, s.efficiency_in, s.efficiency_out, 
@@ -323,7 +323,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         end
     end
     seasonal_storage_cannot_charge_asset_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT
         s.id, t.rep_period, t.timestep, s.efficiency_out, 
@@ -395,7 +395,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     )
     @info "Adding initial state of charge constraints"
     initial_storage_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT id, initial_storage_level
         FROM seasonal_storage_assets
@@ -407,7 +407,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     end
     @info "Adding conversion constraints"
     conversion_asset_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT
         id, rep_period, timestep, efficiency_in, efficiency_out
@@ -426,7 +426,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     end
     @info "Adding maximum power output constraints"
     all_assets_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT a.id, t.rep_period, t.timestep, a.investable,
             COALESCE(rp.value, 1.0) AS availability_profile,
@@ -459,7 +459,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     end
     @info "Adding intraperiod maximum state of charge constraints"
     intraperiod_storage_capacity_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT id, t.rep_period, t.timestep, capacity_storage_energy
         FROM
@@ -478,7 +478,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     end
     @info "Adding interperiod maximum state of charge constraints"
     interperiod_storage_capacity_data = DBInterface.execute(
-        con,
+        connection,
         """
         WITH
         -- 1. Join profiles to profile names and include period
@@ -561,7 +561,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     end
     @info "Adding transmission capacity constraints"
     line_capacity_data = DBInterface.execute(
-        con,
+        connection,
         """
         SELECT id, t.rep_period, t.timestep, export_capacity, import_capacity
         FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
