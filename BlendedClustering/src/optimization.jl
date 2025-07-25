@@ -576,14 +576,31 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         JuMP.set_upper_bound(flow[row.id, row.rep_period, row.timestep], row.export_capacity)
     end
 
-    # Write the model to a file for debugging
-    # @info "Saving the model"
-    # write_to_file(model, "model.lp")
-
     # Solve
     @info "Solving the model"
     optimize!(model)
 
+end
+
+
+function read_data_from_dir(connection, input_dir, period_length::Int=8760)
+    files = glob("*.csv", input_dir)
+    for file_name in files
+        table_name = replace(replace(basename(file_name), r"\.csv$" => ""), "-" => "_")
+        if startswith(table_name, "profiles")
+            # if table name starts with 'profiles', read it as profile data
+            read_profile_data(connection, table_name, file_name, period_length)
+        else
+            # otherwise, read it as regular data
+            read_data(connection, table_name, file_name)
+        end
+    end
+
+    # Create the rp_profiles table structure (empty initially)
+    # create_dummy_rp_profiles_table(connection)
+
+    # Create all views
+    create_database_views(connection)
 end
 
 function read_data(connection, table_name, file_pattern)
@@ -620,18 +637,28 @@ function read_profile_data(connection, table_name, file_pattern, period_length)
     )
 end
 
-function read_data_from_dir(connection, input_dir, period_length::Int=8760)
-    files = glob("*.csv", input_dir)
-    for file_name in files
-        table_name = replace(replace(basename(file_name), r"\.csv$" => ""), "-" => "_")
-        if startswith(table_name, "profiles")
-            # if table name starts with 'profiles', read it as profile data
-            read_profile_data(connection, table_name, file_name, period_length)
-        else
-            # otherwise, read it as regular data
-            read_data(connection, table_name, file_name)
-        end
-    end
+function create_dummy_rp_profiles_table(connection)
+    DBInterface.execute(connection,
+        """
+        CREATE OR REPLACE TABLE rp_profiles (
+            rep_period INTEGER,
+            timestep INTEGER,
+            id TEXT,
+            profile_type TEXT,
+            value REAL
+        )
+        """
+    )
+end
+
+function create_database_views(connection)
+    denormalize_profiles(connection)
+    create_index_views(connection)
+    create_non_storage_views(connection)
+    create_storage_views(connection)
+end
+
+function denormalize_profiles(connection)
     DBInterface.execute(connection,
         """
         CREATE OR REPLACE TABLE profiles AS
@@ -645,6 +672,9 @@ function read_data_from_dir(connection, input_dir, period_length::Int=8760)
         p.id = a.profile
         """
     )
+end
+
+function create_index_views(connection)
     DBInterface.execute(connection,
         """
         CREATE OR REPLACE VIEW locations AS
@@ -652,6 +682,7 @@ function read_data_from_dir(connection, input_dir, period_length::Int=8760)
         FROM assets
         """
     )
+
     DBInterface.execute(connection,
         """
         CREATE OR REPLACE VIEW carriers AS
@@ -660,6 +691,49 @@ function read_data_from_dir(connection, input_dir, period_length::Int=8760)
         SELECT DISTINCT carrier_in AS id FROM technologies_conversion
         """
     )
+
+    DBInterface.execute(connection,
+        """
+        CREATE OR REPLACE VIEW timesteps AS
+        SELECT DISTINCT timestep AS id
+        FROM profiles
+        """
+    )
+
+    DBInterface.execute(connection,
+        """
+        CREATE OR REPLACE VIEW periods AS
+        SELECT DISTINCT period AS id
+        FROM profiles
+        """
+    )
+
+    DBInterface.execute(connection,
+        """
+        CREATE OR REPLACE VIEW all_locations_and_carriers AS
+        SELECT locations.id AS location, carriers.id AS carrier
+        FROM locations, carriers
+        """
+    )
+
+    DBInterface.execute(connection,
+        """
+        CREATE OR REPLACE VIEW timesteps AS
+        SELECT DISTINCT timestep AS id
+        FROM profiles
+        """
+    )
+
+    DBInterface.execute(connection,
+        """
+        CREATE OR REPLACE VIEW periods AS
+        SELECT DISTINCT period AS id
+        FROM profiles
+        """
+    )
+end
+
+function create_non_storage_views(connection)
     DBInterface.execute(connection,
         """
         CREATE OR REPLACE VIEW investable_assets AS
@@ -695,6 +769,9 @@ function read_data_from_dir(connection, input_dir, period_length::Int=8760)
         (SELECT id AS technology, * EXCLUDE id FROM technologies NATURAL JOIN technologies_generation WHERE type = 'generation')
         """
     )
+end
+
+function create_storage_views(connection)
     DBInterface.execute(connection,
         """
         CREATE OR REPLACE VIEW storage_assets AS
@@ -742,26 +819,6 @@ function read_data_from_dir(connection, input_dir, period_length::Int=8760)
         SELECT *
         FROM storage_assets
         WHERE NOT is_seasonal
-        """
-    )
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE VIEW timesteps AS
-        SELECT DISTINCT timestep AS id
-        FROM profiles
-        """
-    )
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE VIEW periods AS
-        SELECT DISTINCT period AS id
-        FROM profiles
-        """
-    )
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE VIEW all_locations_and_carriers AS
-        SELECT locations.id AS location, carriers.id AS carrier FROM locations, carriers
         """
     )
 end
