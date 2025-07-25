@@ -12,14 +12,13 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     # read all the data from the CSV files
     @info "Reading data from CSV files"
     read_data_from_dir(connection, input_dir, period_length)
+    @info "Preprocessing data that does not depend on representative periods"
+    preprocess_rp_independent_data(connection)
 
     # Creating scalars
-    operations_weight = DBInterface.execute(connection,
-                            "SELECT value FROM scalars WHERE scalar='operations_weight'"
-                        ) |> first |> first
-    timestep_duration = DBInterface.execute(connection,
-                            "SELECT value FROM scalars WHERE scalar='timestep_duration'"
-                        ) |> first |> first
+    operations_weight = get_scalar(connection, "operations_weight")
+    timestep_duration = get_scalar(connection, "timestep_duration")
+
     # Create indexing sets
     N = get_index_set(connection, "locations")
     X = get_index_set(connection, "carriers")
@@ -39,21 +38,9 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     D = get_index_set(connection, "periods")
 
     # Clustering
-    clustering_df = DuckDB.query(connection, "SELECT * FROM profiles ORDER BY period, timestep, id") |> DataFrame
-
     @info "Finding $n_rep_periods $clustering_type representative periods"
-    clustering_method = if clustering_type ≡ :hull
-        if weight_type ≡ :conical
-            :conical_hull
-        elseif weight_type ≡ :conical_bounded
-            :convex_hull_with_null
-        else
-            :convex_hull
-        end
-    else
-        clustering_type
-    end
-
+    clustering_df = DBInterface.execute(connection, "SELECT * FROM profiles") |> DataFrame
+    clustering_method = clustering_type_to_method(clustering_type, weight_type)
     clustering_result = find_representative_periods(
         clustering_df, n_rep_periods;
         drop_incomplete_last_period=true,
@@ -63,17 +50,95 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     )
 
     @info "Fitting $(string(weight_type)) weights"
-    @time begin
-        fit_rep_period_weights!(clustering_result; weight_type=weight_type)
-    end
+    fit_rep_period_weights!(clustering_result; weight_type=weight_type)
 
     @info "Reinterpreting the clustering results"
     weight = clustering_result.weight_matrix
     rp_weight = sum(weight, dims=1)
     rp_weight .*= operations_weight
+
     DuckDB.register_data_frame(connection, clustering_result.profiles, "rp_profiles")
 
+    @info "Preprocessing data that depends on representative periods"
+    preprocess_rp_dependent_data(connection)
+
     # Create model
+    investment_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM investment_cost_objective_view"
+    )
+    operations_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM operations_cost_objective_view"
+    )
+    spillage_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM spillage_cost_objective_view"
+    )
+    power_out_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM power_out_constraint_view"
+    )
+    power_in_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM power_in_constraint_view"
+    )
+    transmission_line_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM transmission_line_constraint_view"
+    )
+    initial_storage_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM initial_storage_constraint_view"
+    )
+    interperiod_storage_capacity_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM interperiod_storage_capacity_constraint_view"
+    )
+    demand_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM demand_constraint_view"
+    )
+    short_term_storage_asset_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM short_term_storage_constraint_view"
+    )
+    seasonal_storage_can_charge_asset_data = DBInterface.execute(
+        connection,
+        """
+        SELECT * FROM seasonal_storage_can_charge_constraint_view
+        """
+    )
+    seasonal_storage_cannot_charge_asset_data = DBInterface.execute(
+        connection,
+        """
+        SELECT * FROM seasonal_storage_cannot_charge_constraint_view
+        """
+    )
+    conversion_asset_data = DBInterface.execute(
+        connection,
+        """
+        SELECT * FROM conversion_constraint_view
+        """
+    )
+    all_assets_data = DBInterface.execute(
+        connection,
+        """
+        SELECT * FROM all_assets_constraint_view
+        """
+    )
+    intraperiod_storage_capacity_data = DBInterface.execute(
+        connection,
+        """
+        SELECT * FROM intraperiod_storage_capacity_constraint_view
+        """
+    )
+    line_capacity_data = DBInterface.execute(
+        connection,
+        """
+        SELECT * FROM transmission_line_capacity_constraint_view
+        """
+    )
 
     # Create variables
     @info "Creating variables"
@@ -89,10 +154,6 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
 
     @info "Creating objective"
     # Build expressions for costs
-    investment_data = DBInterface.execute(
-        connection,
-        "SELECT id, unit_capacity, cost FROM investable_assets"
-    )
     cost_of_investment = @expression(
         model,
         isempty(investment_data) ?
@@ -101,15 +162,6 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
             row.cost * row.unit_capacity * invested_units[row.id]
             for row in rows(investment_data)
         ])
-    )
-
-    operations_data = DBInterface.execute(
-        connection,
-        "SELECT id, variable_cost FROM generation_assets"
-    )
-    spillage_data = DBInterface.execute(
-        connection,
-        "SELECT id, spillage_cost FROM seasonal_storage_assets"
     )
 
     cost_of_operations = @expression(
@@ -140,41 +192,14 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     ## balance constraint
     @info "Adding balance constraints"
     ### first build expressions
-    power_out_data = DBInterface.execute(
-        connection,
-        """
-        SELECT a.id, a.location, t.carrier_out
-        FROM assets AS a
-        JOIN technologies AS t
-        ON a.technology = t.id
-        """
-    )
+
     @expression(model, total_power_out[N, X, R, H], AffExpr(0.0))
     for row in rows(power_out_data)
         for r in R, h in H
             total_power_out[row.location, row.carrier_out, r, h] += power_out[row.id, r, h]
         end
     end
-    power_in_data = DBInterface.execute(
-        connection,
-        """
-        SELECT a.id, a.location, t.carrier_out as carrier_in
-        FROM seasonal_storage_assets_can_charge AS a
-        JOIN technologies AS t
-        ON a.technology = t.id
-        UNION ALL
-        SELECT a.id, a.location, t.carrier_out as carrier_in
-        FROM short_term_storage_assets AS a
-        JOIN technologies AS t
-        ON a.technology = t.id
-        UNION ALL
-        SELECT a.id, a.location, t.carrier_in
-        FROM conversion_assets AS a
-        JOIN
-        (SELECT * FROM technologies NATURAL JOIN technologies_conversion) as t
-        ON a.technology = t.id
-        """
-    )
+
     @expression(model, total_power_in[N, X, R, H], AffExpr(0.0))
     for row in rows(power_in_data)
         for r in R, h in H
@@ -183,13 +208,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     end
     @expression(model, total_flow_in[N, X, R, H], AffExpr(0.0))
     @expression(model, total_flow_out[N, X, R, H], AffExpr(0.0))
-    transmission_line_data = DBInterface.execute(
-        connection,
-        """
-        SELECT id, "from", "to", carrier
-        FROM transmission_lines
-        """
-    )
+
     for row in rows(transmission_line_data)
         for r in R, h in H
             total_flow_out[row.from, row.carrier, r, h] += flow[row.id, r, h]
@@ -197,26 +216,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         end
     end
 
-    demand_data = DBInterface.execute(
-        connection,
-        """
-        SELECT
-        d.location, d.carrier, t.rep_period, t.timestep,
-        COALESCE(rp.value, 1.0) AS demand_profile,
-        d.peak_demand
-        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
-        CROSS JOIN
-        (SELECT demand.id, lc.location, lc.carrier,
-        COALESCE(demand.peak_demand, 0.0) AS peak_demand
-        FROM all_locations_and_carriers lc
-        LEFT JOIN demand
-        ON lc.carrier=demand.carrier AND lc.location = demand.location) AS d
-        LEFT JOIN (SELECT * FROM rp_profiles WHERE profile_type = 'demand') AS rp
-        ON rp.rep_period = t.rep_period AND rp.timestep = t.timestep AND rp.id = d.id
-        ORDER BY
-        d.location, d.carrier, t.rep_period, t.timestep
-        """
-    )
+
     for row in rows(demand_data)
         @constraint(model,
             total_power_out[row.location, row.carrier, row.rep_period, row.timestep]
@@ -232,17 +232,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     end
 
     @info "Adding storage constraints"
-    short_term_storage_asset_data = DBInterface.execute(
-        connection,
-        """
-        SELECT
-        s.id, t.rep_period, t.timestep, s.efficiency_in, s.efficiency_out,
-        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
-        CROSS JOIN short_term_storage_assets AS s
-        ORDER BY
-        s.id, t.rep_period, t.timestep
-        """
-    )
+
     @info "Adding intra-period short-term storage constraints"
     for row in rows(short_term_storage_asset_data)
         if row.timestep == 1
@@ -271,21 +261,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
             )
         end
     end
-    seasonal_storage_can_charge_asset_data = DBInterface.execute(
-        connection,
-        """
-        SELECT
-        s.id, t.rep_period, t.timestep, s.efficiency_in, s.efficiency_out, 
-        COALESCE(rp.value, 0.0) AS inflow_profile,
-        s.peak_inflow,
-        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
-        CROSS JOIN seasonal_storage_assets_can_charge AS s
-        LEFT JOIN (SELECT * FROM rp_profiles WHERE profile_type = 'inflows') AS rp
-        ON rp.rep_period = t.rep_period AND rp.timestep = t.timestep AND rp.id = s.id
-        ORDER BY
-        s.id, t.rep_period, t.timestep
-        """
-    )
+
     @info "Adding intra-period seasonal storage constraints"
     for row in rows(seasonal_storage_can_charge_asset_data)
         if row.timestep == 1
@@ -322,21 +298,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
             )
         end
     end
-    seasonal_storage_cannot_charge_asset_data = DBInterface.execute(
-        connection,
-        """
-        SELECT
-        s.id, t.rep_period, t.timestep, s.efficiency_out, 
-        COALESCE(rp.value, 0.0) AS inflow_profile,
-        s.peak_inflow,
-        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
-        CROSS JOIN seasonal_storage_assets_cannot_charge AS s
-        LEFT JOIN (SELECT * FROM rp_profiles WHERE profile_type = 'inflows') AS rp
-        ON rp.rep_period = t.rep_period AND rp.timestep = t.timestep AND rp.id = s.id
-        ORDER BY
-        s.id, t.rep_period, t.timestep
-        """
-    )
+
     @info "Adding intra-period seasonal storage constraints"
     for row in rows(seasonal_storage_cannot_charge_asset_data)
         if row.timestep == 1
@@ -394,29 +356,13 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         state_of_charge_intra[s, r, H[end]] == state_of_charge_intra_0[s, r]
     )
     @info "Adding initial state of charge constraints"
-    initial_storage_data = DBInterface.execute(
-        connection,
-        """
-        SELECT id, initial_storage_level
-        FROM seasonal_storage_assets
-        """
-    )
+
     for row in rows(initial_storage_data)
         @constraint(model, state_of_charge_inter_0[row.id] == row.initial_storage_level)
         @constraint(model, sum(clustering_result.weight_matrix[D[end], r] * state_of_charge_intra_0[row.id, r] for r in R) == row.initial_storage_level)
     end
     @info "Adding conversion constraints"
-    conversion_asset_data = DBInterface.execute(
-        connection,
-        """
-        SELECT
-        id, rep_period, timestep, efficiency_in, efficiency_out
-        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
-        CROSS JOIN conversion_assets AS s
-        ORDER BY
-        id, rep_period, timestep
-        """
-    )
+
     for row in rows(conversion_asset_data)
         @constraint(model,
             power_in[row.id, row.rep_period, row.timestep] * row.efficiency_in
@@ -425,24 +371,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         )
     end
     @info "Adding maximum power output constraints"
-    all_assets_data = DBInterface.execute(
-        connection,
-        """
-        SELECT a.id, t.rep_period, t.timestep, a.investable,
-            COALESCE(rp.value, 1.0) AS availability_profile,
-            a.unit_capacity, a.initial_units
-        FROM
-        (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
-        CROSS JOIN
-        (SELECT *, i.id IS NOT NULL AS investable FROM assets LEFT JOIN investments i ON assets.id = i.id) AS a
-        LEFT JOIN
-        (SELECT * FROM rp_profiles WHERE profile_type = 'availability') AS rp
-        ON
-        rp.rep_period = t.rep_period AND rp.timestep = t.timestep AND rp.id = a.id
-        ORDER BY
-        a.id, t.rep_period, t.timestep
-        """
-    )
+
     @expression(model, accumulated_capacity[A], AffExpr(0.0))
     for row in rows(all_assets_data)
         accumulated_capacity[row.id] = row.unit_capacity * (
@@ -458,18 +387,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         @constraint(model, power_in[s, r, h] <= accumulated_capacity[s])
     end
     @info "Adding intraperiod maximum state of charge constraints"
-    intraperiod_storage_capacity_data = DBInterface.execute(
-        connection,
-        """
-        SELECT id, t.rep_period, t.timestep, capacity_storage_energy
-        FROM
-        (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
-        CROSS JOIN
-        storage_assets
-        ORDER BY
-        id, t.rep_period, t.timestep
-        """
-    )
+
     for row in rows(intraperiod_storage_capacity_data)
         JuMP.set_upper_bound(
             state_of_charge_intra[row.id, row.rep_period, row.timestep],
@@ -477,78 +395,6 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         )
     end
     @info "Adding interperiod maximum state of charge constraints"
-    interperiod_storage_capacity_data = DBInterface.execute(
-        connection,
-        """
-        WITH
-        -- 1. Join profiles to profile names and include period
-        raw_profiles AS (
-            SELECT
-                arl.asset,
-                arl.profile_type,
-                prl.period,
-                prl.value
-            FROM
-                assets_storage_seasonal_reservoir_levels arl
-            JOIN
-                profiles_reservoir_levels prl
-            ON
-                arl.profile_name = prl.id
-        ),
-
-        -- 2. Compute average value per asset, profile_type, and period
-        avg_profiles AS (
-            SELECT
-                asset,
-                profile_type,
-                period,
-                AVG(value) AS avg_value
-            FROM
-                raw_profiles
-            GROUP BY
-                asset, profile_type, period
-        ),
-
-        -- 3. Pivot: get min and max levels side by side per (asset, period)
-        pivoted_profiles AS (
-            SELECT
-                asset AS id,
-                period,
-                MAX(CASE WHEN profile_type = 'min_storage_level' THEN avg_value END) AS min_storage_level,
-                MAX(CASE WHEN profile_type = 'max_storage_level' THEN avg_value END) AS max_storage_level
-            FROM
-                avg_profiles
-            GROUP BY id, period
-        ),
-
-        -- 4. Get all combinations of seasonal_storage_assets × all periods (from profiles table)
-        all_asset_periods AS (
-            SELECT
-                sa.id, prl.period, sa.capacity_storage_energy,
-            FROM
-                seasonal_storage_assets sa
-            CROSS JOIN (
-                SELECT DISTINCT period FROM profiles_reservoir_levels
-            ) prl
-        )
-
-        -- 5. Final: join and fill missing min/max with defaults
-        SELECT
-            ap.id,
-            ap.period,
-            COALESCE(pp.min_storage_level, 0.0) AS min_storage_level,
-            COALESCE(pp.max_storage_level, 1.0) AS max_storage_level,
-            ap.capacity_storage_energy
-        FROM
-            all_asset_periods ap
-        LEFT JOIN
-            pivoted_profiles pp
-        ON
-            ap.id = pp.id AND ap.period = pp.period
-        ORDER BY
-        ap.id, ap.period
-        """
-    )
     for row in rows(interperiod_storage_capacity_data)
         JuMP.set_lower_bound(
             state_of_charge_inter[row.id, row.period],
@@ -560,17 +406,7 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
         )
     end
     @info "Adding transmission capacity constraints"
-    line_capacity_data = DBInterface.execute(
-        connection,
-        """
-        SELECT id, t.rep_period, t.timestep, export_capacity, import_capacity
-        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
-        CROSS JOIN
-        transmission_lines
-        ORDER BY
-        id, t.rep_period, t.timestep
-        """
-    )
+
     for row in rows(line_capacity_data)
         JuMP.set_lower_bound(flow[row.id, row.rep_period, row.timestep], -row.import_capacity)
         JuMP.set_upper_bound(flow[row.id, row.rep_period, row.timestep], row.export_capacity)
@@ -597,7 +433,7 @@ function read_data_from_dir(connection, input_dir, period_length::Int=8760)
     end
 
     # Create the rp_profiles table structure (empty initially)
-    # create_dummy_rp_profiles_table(connection)
+    create_dummy_rp_profiles_view(connection)
 
     # Create all views
     create_database_views(connection)
@@ -637,18 +473,15 @@ function read_profile_data(connection, table_name, file_pattern, period_length)
     )
 end
 
-function create_dummy_rp_profiles_table(connection)
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE TABLE rp_profiles (
-            rep_period INTEGER,
-            timestep INTEGER,
-            id TEXT,
-            profile_type TEXT,
-            value REAL
-        )
-        """
+function create_dummy_rp_profiles_view(connection)
+    rp_profiles = DataFrame(
+        rep_period=Int[],
+        timestep=Int[],
+        id=String[],
+        profile_type=String[],
+        value=Float64[]
     )
+    DuckDB.register_data_frame(connection, rp_profiles, "rp_profiles")
 end
 
 function create_database_views(connection)
@@ -670,6 +503,8 @@ function denormalize_profiles(connection)
         assets_profiles a
         ON
         p.id = a.profile
+        ORDER BY
+        p.period, p.timestep, a.asset
         """
     )
 end
@@ -826,4 +661,290 @@ end
 function get_index_set(con, table_name)
     query = "SELECT DISTINCT id FROM $table_name ORDER BY id"
     return columns(DBInterface.execute(con, query)).id
+end
+
+function get_scalar(con, scalar_name)
+    query = "SELECT value FROM scalars WHERE scalar = '$scalar_name'"
+    return DBInterface.execute(con, query) |> first |> first
+end
+
+function preprocess_rp_independent_data(connection)
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW investment_cost_objective_view AS
+        SELECT id, unit_capacity, cost
+        FROM investable_assets
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW operations_cost_objective_view AS
+        SELECT id, variable_cost
+        FROM generation_assets
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW spillage_cost_objective_view AS
+        SELECT id, spillage_cost
+        FROM seasonal_storage_assets
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW power_out_constraint_view AS
+        SELECT a.id, a.location, t.carrier_out
+        FROM assets AS a
+        JOIN technologies AS t
+        ON a.technology = t.id
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW power_in_constraint_view AS
+        SELECT a.id, a.location, t.carrier_out as carrier_in
+        FROM seasonal_storage_assets_can_charge AS a
+        JOIN technologies AS t
+        ON a.technology = t.id
+        UNION ALL
+        SELECT a.id, a.location, t.carrier_out as carrier_in
+        FROM short_term_storage_assets AS a
+        JOIN technologies AS t
+        ON a.technology = t.id
+        UNION ALL
+        SELECT a.id, a.location, t.carrier_in
+        FROM conversion_assets AS a
+        JOIN
+        (SELECT * FROM technologies NATURAL JOIN technologies_conversion) as t
+        ON a.technology = t.id
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW transmission_line_constraint_view AS
+        SELECT id, "from", "to", carrier
+        FROM transmission_lines
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW initial_storage_constraint_view AS
+        SELECT id, initial_storage_level
+        FROM seasonal_storage_assets
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW raw_profiles AS
+        SELECT arl.asset, arl.profile_type, prl.period, prl.value
+        FROM assets_storage_seasonal_reservoir_levels arl
+        JOIN profiles_reservoir_levels prl
+        ON arl.profile_name = prl.id
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW avg_profiles AS 
+        SELECT asset, profile_type, period, AVG(value) AS avg_value
+        FROM raw_profiles
+        GROUP BY asset, profile_type, period
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW pivoted_profiles AS
+        SELECT
+            asset AS id,
+            period,
+            MAX(CASE WHEN profile_type = 'min_storage_level' THEN avg_value END) AS min_storage_level,
+            MAX(CASE WHEN profile_type = 'max_storage_level' THEN avg_value END) AS max_storage_level
+        FROM avg_profiles
+        GROUP BY id, period
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW all_asset_periods AS
+        SELECT sa.id, prl.period, sa.capacity_storage_energy,
+        FROM seasonal_storage_assets sa
+        CROSS JOIN
+        (SELECT DISTINCT period FROM profiles_reservoir_levels) prl
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW interperiod_storage_capacity_constraint_view AS
+        SELECT
+            ap.id,
+            ap.period,
+            COALESCE(pp.min_storage_level, 0.0) AS min_storage_level,
+            COALESCE(pp.max_storage_level, 1.0) AS max_storage_level,
+            ap.capacity_storage_energy
+        FROM all_asset_periods ap
+        LEFT JOIN pivoted_profiles pp
+        ON ap.id = pp.id AND ap.period = pp.period
+        ORDER BY ap.id, ap.period
+        """
+    )
+end
+
+function preprocess_rp_dependent_data(connection)
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW demand_constraint_view AS
+        SELECT
+        d.location, d.carrier, t.rep_period, t.timestep,
+        COALESCE(rp.value, 1.0) AS demand_profile,
+        d.peak_demand
+        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
+        CROSS JOIN
+        (SELECT demand.id, lc.location, lc.carrier,
+        COALESCE(demand.peak_demand, 0.0) AS peak_demand
+        FROM all_locations_and_carriers lc
+        LEFT JOIN demand
+        ON lc.carrier=demand.carrier AND lc.location = demand.location) AS d
+        LEFT JOIN (SELECT * FROM rp_profiles WHERE profile_type = 'demand') AS rp
+        ON rp.rep_period = t.rep_period AND rp.timestep = t.timestep AND rp.id = d.id
+        ORDER BY
+        d.location, d.carrier, t.rep_period, t.timestep
+        """
+    )
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW short_term_storage_constraint_view AS
+        SELECT
+        s.id, t.rep_period, t.timestep, s.efficiency_in, s.efficiency_out,
+        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
+        CROSS JOIN short_term_storage_assets AS s
+        ORDER BY
+        s.id, t.rep_period, t.timestep
+        """
+    )
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW seasonal_storage_can_charge_constraint_view AS
+        SELECT
+        s.id, t.rep_period, t.timestep, s.efficiency_in, s.efficiency_out, 
+        COALESCE(rp.value, 0.0) AS inflow_profile,
+        s.peak_inflow,
+        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
+        CROSS JOIN seasonal_storage_assets_can_charge AS s
+        LEFT JOIN (SELECT * FROM rp_profiles WHERE profile_type = 'inflows') AS rp
+        ON rp.rep_period = t.rep_period AND rp.timestep = t.timestep AND rp.id = s.id
+        ORDER BY
+        s.id, t.rep_period, t.timestep
+        """
+    )
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW seasonal_storage_cannot_charge_constraint_view AS
+        SELECT
+        s.id, t.rep_period, t.timestep, s.efficiency_out, 
+        COALESCE(rp.value, 0.0) AS inflow_profile,
+        s.peak_inflow,
+        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
+        CROSS JOIN seasonal_storage_assets_cannot_charge AS s
+        LEFT JOIN (SELECT * FROM rp_profiles WHERE profile_type = 'inflows') AS rp
+        ON rp.rep_period = t.rep_period AND rp.timestep = t.timestep AND rp.id = s.id
+        ORDER BY
+        s.id, t.rep_period, t.timestep
+        """
+    )
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW conversion_constraint_view AS
+        SELECT
+        id, rep_period, timestep, efficiency_in, efficiency_out
+        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
+        CROSS JOIN conversion_assets AS s
+        ORDER BY
+        id, rep_period, timestep
+        """
+    )
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW all_assets_constraint_view AS
+        SELECT a.id, t.rep_period, t.timestep, a.investable,
+            COALESCE(rp.value, 1.0) AS availability_profile,
+            a.unit_capacity, a.initial_units
+        FROM
+        (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
+        CROSS JOIN
+        (SELECT *, i.id IS NOT NULL AS investable FROM assets LEFT JOIN investments i ON assets.id = i.id) AS a
+        LEFT JOIN
+        (SELECT * FROM rp_profiles WHERE profile_type = 'availability') AS rp
+        ON
+        rp.rep_period = t.rep_period AND rp.timestep = t.timestep AND rp.id = a.id
+        ORDER BY
+        a.id, t.rep_period, t.timestep
+        """
+    )
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW intraperiod_storage_capacity_constraint_view AS
+        SELECT id, t.rep_period, t.timestep, capacity_storage_energy
+        FROM
+        (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
+        CROSS JOIN
+        storage_assets
+        ORDER BY
+        id, t.rep_period, t.timestep
+        """
+    )
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW transmission_line_capacity_constraint_view AS
+        SELECT id, t.rep_period, t.timestep, export_capacity, import_capacity
+        FROM (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
+        CROSS JOIN
+        transmission_lines
+        ORDER BY
+        id, t.rep_period, t.timestep
+        """
+    )
+end
+
+function clustering_type_to_method(clustering_type, weight_type)
+    if clustering_type ≡ :hull
+        if weight_type ≡ :conical
+            :conical_hull
+        elseif weight_type ≡ :conical_bounded
+            :convex_hull_with_null
+        else
+            :convex_hull
+        end
+    else
+        clustering_type
+    end
 end

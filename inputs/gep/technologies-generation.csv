@@ -1,0 +1,10 @@
+id,variable_cost,ramping_rate
+ENS,1,1
+Wind_Onshore,0,1
+Wind_Offshore,0,1
+Coal,0.051035102,1
+Nuclear,0.0115,1
+Gas,0.079858571,1
+OCGT,0.10993,1
+Solar,0,1
+Hydro,0,1
