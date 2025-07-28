@@ -1,15 +1,16 @@
 module BlendedClustering
 
+using Clustering
 using CSV
 using DataFrames
 using Distances
 using DuckDB
-using Clustering
+using Glob
+using JuMP
 using LinearAlgebra
 using SparseArrays
 using Statistics
-using JuMP
-using Glob
+using StyledStrings
 import Tables.columns, Tables.rows
 
 include("data-structures.jl")

@@ -1,19 +1,23 @@
 export run_experiment
 
 function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericModel{Float64})
+    @info styled"{info:Running experiment: $(experiment_data.name)}"
     connection = experiment_data.db_connection
     input_dir = experiment_data.input_dir
     n_rep_periods = experiment_data.n_rep_periods
     period_length = experiment_data.period_length
     clustering_type = experiment_data.clustering_type
     distance = experiment_data.distance
-    weight_type = :dirac
+    weight_type = experiment_data.weight_type
+    niters = experiment_data.niters
+    learning_rate = experiment_data.learning_rate
 
-    # read all the data from the CSV files
     @info "Reading data from CSV files"
     read_data_from_dir(connection, input_dir, period_length)
-    @info "Preprocessing data that does not depend on representative periods"
-    preprocess_rp_independent_data(connection)
+
+    @info "Preprocessing data"
+    # Creating the database views for quering constraints and objective data
+    create_views(connection)
 
     # Creating scalars
     operations_weight = get_scalar(connection, "operations_weight")
@@ -33,9 +37,9 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     S_seas = get_index_set(connection, "seasonal_storage_assets")
     S_seas_in = get_index_set(connection, "seasonal_storage_assets_can_charge")
     C = get_index_set(connection, "conversion_assets")
-    R = collect(1:n_rep_periods)
     H = get_index_set(connection, "timesteps")
     D = get_index_set(connection, "periods")
+    R = collect(1:n_rep_periods)
 
     # Clustering
     @info "Finding $n_rep_periods $clustering_type representative periods"
@@ -50,7 +54,12 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
     )
 
     @info "Fitting $(string(weight_type)) weights"
-    fit_rep_period_weights!(clustering_result; weight_type=weight_type)
+    fit_rep_period_weights!(
+        clustering_result;
+        weight_type=weight_type,
+        learning_rate=learning_rate,
+        niters=niters
+    )
 
     @info "Reinterpreting the clustering results"
     weight = clustering_result.weight_matrix
@@ -59,8 +68,6 @@ function run_experiment(experiment_data::ExperimentData, model::JuMP.GenericMode
 
     DuckDB.register_data_frame(connection, clustering_result.profiles, "rp_profiles")
 
-    @info "Preprocessing data that depends on representative periods"
-    preprocess_rp_dependent_data(connection)
 
     # Create model
     investment_data = DBInterface.execute(
@@ -668,7 +675,12 @@ function get_scalar(con, scalar_name)
     return DBInterface.execute(con, query) |> first |> first
 end
 
-function preprocess_rp_independent_data(connection)
+function create_views(connection)
+    create_rp_independent_views(connection)
+    create_rp_dependent_views(connection)
+end
+
+function create_rp_independent_views(connection)
     DBInterface.execute(
         connection,
         """
@@ -811,7 +823,7 @@ function preprocess_rp_independent_data(connection)
     )
 end
 
-function preprocess_rp_dependent_data(connection)
+function create_rp_dependent_views(connection)
     DBInterface.execute(
         connection,
         """
