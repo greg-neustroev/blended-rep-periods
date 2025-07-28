@@ -114,35 +114,55 @@ mutable struct ClusteringResult
 end
 
 struct ExperimentResult
-    objective::Float64
-    eval_objective::Float64
-    runtime::Float64
+    name::String
+    seed::Int
+    termination_status::String
+    objective_value::Float64
+    time_to_read::Float64
+    time_to_preprocess::Float64
+    time_to_cluster::Float64
+    time_to_fit_weights::Float64
+    time_to_formulate_model::Float64
+    time_to_solve::Float64
 
-    function ExperimentResult(objective::Float64, eval_objective::Float64, runtime::Float64)
-        return new(objective, eval_objective, runtime)
+    function ExperimentResult(
+        name::String,
+        seed::Int,
+        solved_model::JuMP.AbstractModel,
+        time_to_read::Float64,
+        time_to_preprocess::Float64,
+        time_to_cluster::Float64,
+        time_to_fit_weights::Float64,
+        time_to_formulate_model::Float64,
+        time_to_solve::Float64,
+    )
+        if JuMP.is_solved_and_feasible(solved_model)
+            return new(
+                name,
+                seed,
+                solved_model |> termination_status |> string,
+                solved_model |> objective_value,
+                time_to_read,
+                time_to_preprocess,
+                time_to_cluster,
+                time_to_fit_weights,
+                time_to_formulate_model,
+                time_to_solve,
+            )
+        else
+            return new(
+                name,
+                seed,
+                solved_model |> termination_status |> string,
+                Float64.Inf,
+                time_to_read,
+                time_to_preprocess,
+                time_to_cluster,
+                time_to_fit_weights,
+                time_to_formulate_model,
+                time_to_solve,
+            )
+        end
+
     end
-end
-
-"""
-    ModelSets
-
-Structure to hold all the model sets in one place.
-"""
-struct ModelSets
-    N::Vector{Symbol}        # locations
-    X::Vector{Symbol}        # carriers
-    L::Vector{Symbol}        # transmission_lines
-    T::Vector{Symbol}        # technologies
-    A::Vector{Symbol}        # assets
-    A_inv::Vector{Symbol}    # investable_assets
-    A_not::Vector{Symbol}    # non_investable_assets
-    G::Vector{Symbol}        # generation_assets
-    S::Vector{Symbol}        # storage_assets
-    S_ST::Vector{Symbol}     # short_term_storage_assets
-    S_seas::Vector{Symbol}   # seasonal_storage_assets
-    S_seas_in::Vector{Symbol} # seasonal_storage_assets_can_charge
-    C::Vector{Symbol}        # conversion_assets
-    R::Vector{Int}           # representative periods
-    H::Vector{Int}           # timesteps
-    D::Vector{Int}           # periods
 end

@@ -568,3 +568,31 @@ function find_representative_periods(
 
   return ClusteringResult(rp_df, weight_matrix, clustering_matrix, rp_matrix)
 end
+
+function cluster_using_experiment_data(experiment_data)
+  # Extract parameters from the experiment data into local variables
+  connection = experiment_data.db_connection
+  n_rep_periods = experiment_data.n_rep_periods
+  clustering_type = experiment_data.clustering_type
+  weight_type = experiment_data.weight_type
+  distance = experiment_data.distance
+
+  # Collect the clustering data into a data frame
+  clustering_df = DBInterface.execute(
+    connection,
+    "SELECT * FROM profiles"
+  ) |> DataFrame
+  # Determine the clustering method
+  clustering_method = clustering_type_to_method(
+    clustering_type,
+    weight_type
+  )
+  # Perform the clustering
+  find_representative_periods(
+    clustering_df,
+    n_rep_periods;
+    method=clustering_method,
+    distance=distance,
+    init=:kmcen
+  )
+end

@@ -8,6 +8,7 @@ using DuckDB
 using Glob
 using JuMP
 using LinearAlgebra
+using Random
 using SparseArrays
 using Statistics
 using StyledStrings
@@ -18,5 +19,6 @@ include("weight_fitting.jl")
 include("cluster.jl")
 include("io.jl")
 include("optimization.jl")
+include("experiment.jl")
 
 end # module BlendedClustering
