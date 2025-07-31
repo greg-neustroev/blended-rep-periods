@@ -19,6 +19,7 @@ include("weight_fitting.jl")
 include("cluster.jl")
 include("io.jl")
 include("optimization.jl")
+include("evaluation.jl")
 include("experiment.jl")
 
 end # module BlendedClustering

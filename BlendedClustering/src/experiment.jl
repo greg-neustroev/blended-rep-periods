@@ -53,6 +53,19 @@ function run_experiment(
     # Solve
     @info styled"{bold:Solving the model}"
     time_to_solve = @elapsed optimize!(model)
+    @info "Model termination status: $(JuMP.termination_status(model))"
+
+    if JuMP.termination_status(model) == MOI.OPTIMAL
+        # Evaluate the solution. Resolve the full problem with some of the
+        # decision variables fixed to the values from the clustering model
+        # to get the true objective value.
+        @info styled"{bold:Evaluating the model}"
+
+
+    end
+
+    # Save the results
+    @info styled"{bold:Saving the results}"
 
     result = ExperimentResult(
         experiment_data.name,

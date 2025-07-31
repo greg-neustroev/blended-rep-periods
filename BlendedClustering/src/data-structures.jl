@@ -17,7 +17,8 @@ struct RunData <: AbstractDataFrame
             "distance",
             "weight_type",
             "niters",
-            "learning_rate"
+            "learning_rate",
+            "evaluation_type",
         ] |> Set
         df_columns = df |> names |> Set
         if !issubset(required_columns, df_columns)
@@ -25,7 +26,8 @@ struct RunData <: AbstractDataFrame
         end
         base_dir = dirname(path)
         transform!(df, :input_dir => ByRow(s -> joinpath(base_dir, s)) => :input_dir)
-        transform!(df, [:clustering_type, :weight_type] .=> ByRow(Symbol) .=> [:clustering_type, :weight_type])
+        symbol_columns = [:clustering_type, :weight_type, :evaluation_type]
+        transform!(df, symbol_columns .=> ByRow(Symbol) .=> symbol_columns)
         transform!(df, :distance => ByRow(string_to_semimetric) => :distance)
         return df
     end
@@ -63,6 +65,7 @@ struct ExperimentData
     weight_type::Symbol
     niters::Int
     learning_rate::Float32
+    evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}; database::AbstractString=":memory:")
         return new(
@@ -75,7 +78,8 @@ struct ExperimentData
             run_data_row.distance,
             run_data_row.weight_type,
             run_data_row.niters,
-            run_data_row.learning_rate
+            run_data_row.learning_rate,
+            run_data_row.evaluation_type
         )
     end
 end
