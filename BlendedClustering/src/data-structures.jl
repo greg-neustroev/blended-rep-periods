@@ -10,7 +10,6 @@ struct RunData <: AbstractDataFrame
         # Ensure the DataFrame has the correct column names
         required_columns = [
             "name",
-            "input_dir",
             "n_rep_periods",
             "period_length",
             "clustering_type",
@@ -24,8 +23,6 @@ struct RunData <: AbstractDataFrame
         if !issubset(required_columns, df_columns)
             error("Input CSV file is missing required columns: $required_columns")
         end
-        base_dir = dirname(path)
-        transform!(df, :input_dir => ByRow(s -> joinpath(base_dir, s)) => :input_dir)
         symbol_columns = [:clustering_type, :weight_type, :evaluation_type]
         transform!(df, symbol_columns .=> ByRow(Symbol) .=> symbol_columns)
         transform!(df, :distance => ByRow(string_to_semimetric) => :distance)
@@ -53,10 +50,6 @@ Data needed to run a single experiment (i.e., a single optimization model)
 struct ExperimentData
     name::String
 
-    # Database connection
-    db_connection::DuckDB.DB
-    input_dir::String
-
     # Clustering
     n_rep_periods::Int
     period_length::Int
@@ -70,8 +63,6 @@ struct ExperimentData
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}; database::AbstractString=":memory:")
         return new(
             run_data_row.name,
-            DBInterface.connect(DuckDB.DB, database),
-            run_data_row.input_dir,
             run_data_row.n_rep_periods,
             run_data_row.period_length,
             run_data_row.clustering_type,
@@ -122,7 +113,6 @@ struct ExperimentResult
     seed::Int
     termination_status::String
     objective_value::Float64
-    time_to_read::Float64
     time_to_preprocess::Float64
     time_to_cluster::Float64
     time_to_fit_weights::Float64
@@ -133,7 +123,6 @@ struct ExperimentResult
         name::String,
         seed::Int,
         solved_model::JuMP.AbstractModel,
-        time_to_read::Float64,
         time_to_preprocess::Float64,
         time_to_cluster::Float64,
         time_to_fit_weights::Float64,
@@ -146,7 +135,6 @@ struct ExperimentResult
                 seed,
                 solved_model |> termination_status |> string,
                 solved_model |> objective_value,
-                time_to_read,
                 time_to_preprocess,
                 time_to_cluster,
                 time_to_fit_weights,

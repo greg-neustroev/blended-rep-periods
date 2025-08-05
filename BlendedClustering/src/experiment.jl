@@ -3,31 +3,26 @@ export run_experiment
 function run_experiment(
     experiment_data::ExperimentData,
     model::JuMP.GenericModel{Float64},
+    connection,
     seed::Int
 )
     @info styled"{info:Running experiment: $(experiment_data.name) with seed $seed}"
     Random.seed!(seed)
+
     # Extract parameters from the experiment data into local variables
-    connection = experiment_data.db_connection
-    input_dir = experiment_data.input_dir
     n_rep_periods = experiment_data.n_rep_periods
     clustering_type = experiment_data.clustering_type
     weight_type = experiment_data.weight_type
     period_length = experiment_data.period_length
 
-    @info "Reading data from CSV files"
-    # Read data from the input directory splitting profiles into periods
-    # of `period_length` timesteps
-    time_to_read = @elapsed read_data_from_dir(connection, input_dir, period_length)
-
     @info "Preprocessing data"
     # Create the database views for quering constraints and objective data
-    time_to_preprocess = @elapsed create_views(connection)
+    time_to_preprocess = @elapsed create_views(connection, period_length)
 
     @info styled"{bold:Finding $n_rep_periods $(string(clustering_type)) representative periods}"
 
     @info "Performing $(string(clustering_type)) clustering"
-    time_to_cluster = @elapsed clustering_result = cluster_using_experiment_data(experiment_data)
+    time_to_cluster = @elapsed clustering_result = cluster_using_experiment_data(experiment_data, connection)
 
     @info "Fitting $(string(weight_type)) weights"
     # Fit the weights 
@@ -71,7 +66,6 @@ function run_experiment(
         experiment_data.name,
         seed,
         model,
-        time_to_read,
         time_to_preprocess,
         time_to_cluster,
         time_to_fit_weights,

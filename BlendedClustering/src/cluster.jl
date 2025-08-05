@@ -569,9 +569,8 @@ function find_representative_periods(
   return ClusteringResult(rp_df, weight_matrix, clustering_matrix, rp_matrix)
 end
 
-function cluster_using_experiment_data(experiment_data)
+function cluster_using_experiment_data(experiment_data, connection)
   # Extract parameters from the experiment data into local variables
-  connection = experiment_data.db_connection
   n_rep_periods = experiment_data.n_rep_periods
   clustering_type = experiment_data.clustering_type
   weight_type = experiment_data.weight_type

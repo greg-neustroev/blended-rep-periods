@@ -1,21 +1,19 @@
-function read_data_from_dir(connection, input_dir, period_length::Int=8760)
+export read_data_from_dir
+
+function read_data_from_dir(connection, input_dir)
     files = glob("*.csv", input_dir)
     for file_name in files
         table_name = replace(replace(basename(file_name), r"\.csv$" => ""), "-" => "_")
         if startswith(table_name, "profiles")
             # if table name starts with 'profiles', read it as profile data
-            read_profile_data(connection, table_name, file_name, period_length)
+            read_profile_data(connection, table_name, file_name)
         else
             # otherwise, read it as regular data
             read_data(connection, table_name, file_name)
         end
     end
 
-    # Create the rp_profiles table structure (empty initially)
-    create_dummy_rp_profiles_view(connection)
-
-    # Create all views
-    create_database_views(connection)
+    create_common_views(connection)
 end
 
 function read_data(connection, table_name, file_pattern)
@@ -28,26 +26,12 @@ function read_data(connection, table_name, file_pattern)
     )
 end
 
-function read_profile_data(connection, table_name, file_pattern, period_length)
+function read_profile_data(connection, table_name, file_pattern)
     DBInterface.execute(connection,
         """
-        CREATE OR REPLACE TABLE $table_name
-        AS 
-        (SELECT 
-        ((timestep - 1) // $period_length) + 1 AS period,
-        ((timestep - 1) % $period_length) + 1 AS timestep,
-        id, value
-        FROM
-        (UNPIVOT
-            (SELECT * FROM read_csv_auto('$file_pattern'))
-        ON COLUMNS
-            (* EXCLUDE(timestep))
-        INTO
-            NAME id
-            VALUE value
-        ))
-        ORDER BY
-            period, timestep, id
+        CREATE OR REPLACE TABLE $(table_name)_raw
+        AS SELECT *
+        FROM read_csv('$file_pattern', null_padding = true, header = true, union_by_name = true)
         """
     )
 end
@@ -61,31 +45,6 @@ function create_dummy_rp_profiles_view(connection)
         value=Float64[]
     )
     DuckDB.register_data_frame(connection, rp_profiles, "rp_profiles")
-end
-
-function create_database_views(connection)
-    denormalize_profiles(connection)
-    create_index_views(connection)
-    create_non_storage_views(connection)
-    create_storage_views(connection)
-end
-
-function denormalize_profiles(connection)
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE TABLE profiles AS
-        SELECT
-        p.period, p.timestep, a.asset AS id, a.profile_type, p.value
-        FROM
-        profiles p
-        JOIN
-        assets_profiles a
-        ON
-        p.id = a.profile
-        ORDER BY
-        p.period, p.timestep, a.asset
-        """
-    )
 end
 
 function create_index_views(connection)
@@ -108,41 +67,9 @@ function create_index_views(connection)
 
     DBInterface.execute(connection,
         """
-        CREATE OR REPLACE VIEW timesteps AS
-        SELECT DISTINCT timestep AS id
-        FROM profiles
-        """
-    )
-
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE VIEW periods AS
-        SELECT DISTINCT period AS id
-        FROM profiles
-        """
-    )
-
-    DBInterface.execute(connection,
-        """
         CREATE OR REPLACE VIEW all_locations_and_carriers AS
         SELECT locations.id AS location, carriers.id AS carrier
         FROM locations, carriers
-        """
-    )
-
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE VIEW timesteps AS
-        SELECT DISTINCT timestep AS id
-        FROM profiles
-        """
-    )
-
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE VIEW periods AS
-        SELECT DISTINCT period AS id
-        FROM profiles
         """
     )
 end
@@ -256,12 +183,152 @@ function get_scalar(con, scalar_name)
     return DBInterface.execute(con, query) |> first |> first
 end
 
-function create_views(connection)
-    create_rp_independent_views(connection)
+function create_common_views(connection)
+    create_index_views(connection)
+    create_non_storage_views(connection)
+    create_storage_views(connection)
+    create_period_independent_views(connection)
+end
+
+function create_views(connection, period_length::Int=8760)
+    create_profile_data_views(connection, period_length)
+    create_reservoir_profile_data_views(connection, period_length)
+
+    create_dummy_rp_profiles_view(connection)
     create_rp_dependent_views(connection)
 end
 
-function create_rp_independent_views(connection)
+function create_profile_data_views(connection, period_length)
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW profiles AS
+        SELECT
+        p.period, p.timestep, a.asset AS id, a.profile_type, p.value
+        FROM
+        (SELECT 
+        ((timestep - 1) // $period_length) + 1 AS period,
+        ((timestep - 1) % $period_length) + 1 AS timestep,
+        id, value
+        FROM
+        (UNPIVOT
+            (SELECT * FROM profiles_raw)
+        ON COLUMNS
+            (* EXCLUDE(timestep))
+        INTO
+            NAME id
+            VALUE value
+        )) p
+        JOIN
+        assets_profiles a
+        ON
+        p.id = a.profile
+        ORDER BY
+        p.period, p.timestep, a.asset
+        """
+    )
+
+    DBInterface.execute(connection,
+        """
+        CREATE OR REPLACE VIEW timesteps AS
+        SELECT DISTINCT timestep AS id
+        FROM profiles
+        """
+    )
+
+    DBInterface.execute(connection,
+        """
+        CREATE OR REPLACE VIEW periods AS
+        SELECT DISTINCT period AS id
+        FROM profiles
+        """
+    )
+end
+
+function create_reservoir_profile_data_views(connection, period_length)
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW profiles_reservoir_levels
+        AS 
+        (SELECT 
+        ((timestep - 1) // $period_length) + 1 AS period,
+        ((timestep - 1) % $period_length) + 1 AS timestep,
+        id, value
+        FROM
+        (UNPIVOT
+            (SELECT * FROM profiles_reservoir_levels_raw)
+        ON COLUMNS
+            (* EXCLUDE(timestep))
+        INTO
+            NAME id
+            VALUE value
+        ))
+        ORDER BY
+            period, timestep, id
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW avg_profiles AS 
+        SELECT asset, profile_type, period, AVG(value) AS avg_value
+        FROM
+        (SELECT arl.asset, arl.profile_type, prl.period, prl.value
+        FROM assets_storage_seasonal_reservoir_levels arl
+        JOIN profiles_reservoir_levels prl
+        ON arl.profile_name = prl.id)
+        GROUP BY asset, profile_type, period
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW pivoted_profiles AS
+        SELECT
+            asset AS id,
+            period,
+            MAX(CASE WHEN profile_type = 'min_storage_level' THEN avg_value END)
+                AS min_storage_level,
+            MAX(CASE WHEN profile_type = 'max_storage_level' THEN avg_value END)
+                AS max_storage_level
+        FROM avg_profiles
+        GROUP BY id, period
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW all_asset_periods AS
+        SELECT sa.id, prl.period, sa.capacity_storage_energy,
+        FROM seasonal_storage_assets sa
+        CROSS JOIN
+        (SELECT DISTINCT period FROM profiles_reservoir_levels) prl
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
+        CREATE OR REPLACE VIEW interperiod_storage_capacity_constraint_view AS
+        SELECT
+            ap.id,
+            ap.period,
+            COALESCE(pp.min_storage_level, 0.0) AS min_storage_level,
+            COALESCE(pp.max_storage_level, 1.0) AS max_storage_level,
+            ap.capacity_storage_energy
+        FROM all_asset_periods ap
+        LEFT JOIN pivoted_profiles pp
+        ON ap.id = pp.id AND ap.period = pp.period
+        ORDER BY ap.id, ap.period
+        """
+    )
+end
+
+function create_period_independent_views(connection)
     DBInterface.execute(
         connection,
         """
@@ -337,71 +404,6 @@ function create_rp_independent_views(connection)
         CREATE OR REPLACE VIEW initial_storage_constraint_view AS
         SELECT id, initial_storage_level
         FROM seasonal_storage_assets
-        """
-    )
-
-    DBInterface.execute(
-        connection,
-        """
-        CREATE OR REPLACE VIEW raw_profiles AS
-        SELECT arl.asset, arl.profile_type, prl.period, prl.value
-        FROM assets_storage_seasonal_reservoir_levels arl
-        JOIN profiles_reservoir_levels prl
-        ON arl.profile_name = prl.id
-        """
-    )
-
-    DBInterface.execute(
-        connection,
-        """
-        CREATE OR REPLACE VIEW avg_profiles AS 
-        SELECT asset, profile_type, period, AVG(value) AS avg_value
-        FROM raw_profiles
-        GROUP BY asset, profile_type, period
-        """
-    )
-
-    DBInterface.execute(
-        connection,
-        """
-        CREATE OR REPLACE VIEW pivoted_profiles AS
-        SELECT
-            asset AS id,
-            period,
-            MAX(CASE WHEN profile_type = 'min_storage_level' THEN avg_value END)
-                AS min_storage_level,
-            MAX(CASE WHEN profile_type = 'max_storage_level' THEN avg_value END)
-                AS max_storage_level
-        FROM avg_profiles
-        GROUP BY id, period
-        """
-    )
-
-    DBInterface.execute(
-        connection,
-        """
-        CREATE OR REPLACE VIEW all_asset_periods AS
-        SELECT sa.id, prl.period, sa.capacity_storage_energy,
-        FROM seasonal_storage_assets sa
-        CROSS JOIN
-        (SELECT DISTINCT period FROM profiles_reservoir_levels) prl
-        """
-    )
-
-    DBInterface.execute(
-        connection,
-        """
-        CREATE OR REPLACE VIEW interperiod_storage_capacity_constraint_view AS
-        SELECT
-            ap.id,
-            ap.period,
-            COALESCE(pp.min_storage_level, 0.0) AS min_storage_level,
-            COALESCE(pp.max_storage_level, 1.0) AS max_storage_level,
-            ap.capacity_storage_energy
-        FROM all_asset_periods ap
-        LEFT JOIN pivoted_profiles pp
-        ON ap.id = pp.id AND ap.period = pp.period
-        ORDER BY ap.id, ap.period
         """
     )
 end
