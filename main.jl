@@ -14,20 +14,21 @@ using Random
 n_random_seeds = 5
 Random.seed!(123)
 seeds = rand(1:1000, n_random_seeds)
+input_dir = "tyndp2024"
+experiments_file = "experiments.csv"
 
 @info "Reading experiment configuration"
 base_dir = joinpath(dirname(@__FILE__), "inputs")
-run_data = joinpath(base_dir, "experiments.csv") |> RunData
-input_dir = joinpath(base_dir, "tyndp2024")
+run_data = joinpath(base_dir, experiments_file) |> RunData
 
-@info "Reading data from CSV files"
+@info "Reading data shared across all experiments"
 connection = DBInterface.connect(DuckDB.DB, ":memory:")
-read_data_from_dir(connection, input_dir)
+read_data_from_dir(connection, joinpath(base_dir, input_dir))
 
 for seed in seeds
-    for run_data_row in eachrow(run_data)
+    for run_data_row in run_data |> eachrow
         experiment_data = run_data_row |> ExperimentData
-        model = Model(Gurobi.Optimizer)
+        model = Gurobi.Optimizer |> Model
         run_experiment(experiment_data, model, connection, seed)
     end
 end
