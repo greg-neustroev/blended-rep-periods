@@ -9,7 +9,6 @@ struct RunData <: AbstractDataFrame
         df = CSV.read(path, DataFrame)
         # Ensure the DataFrame has the correct column names
         required_columns = [
-            "name",
             "n_rep_periods",
             "period_length",
             "clustering_type",
@@ -17,6 +16,7 @@ struct RunData <: AbstractDataFrame
             "weight_type",
             "niters",
             "learning_rate",
+            "regularizer",
             "evaluation_type",
         ] |> Set
         df_columns = df |> names |> Set
@@ -31,7 +31,7 @@ struct RunData <: AbstractDataFrame
 end
 
 function string_to_semimetric(s::AbstractString)
-    if s == "Euclidean"
+    if s == "euclidean"
         return Euclidean()
     elseif s == "cityblock" || s == "manhattan"
         return Cityblock()
@@ -43,6 +43,21 @@ function string_to_semimetric(s::AbstractString)
         error("Unknown distance metric: $s")
     end
 end
+
+function semimetric_to_string(distance::SemiMetric)
+    if distance isa Euclidean
+        return "euclidean"
+    elseif distance isa Cityblock
+        return "cityblock"
+    elseif distance isa CosineDist
+        return "cosine"
+    elseif distance isa Chebyshev
+        return "chebyshev"
+    else
+        return string(distance)
+    end
+end
+
 
 """
 Data needed to run a single experiment (i.e., a single optimization model)
@@ -58,11 +73,22 @@ struct ExperimentData
     weight_type::Symbol
     niters::Int
     learning_rate::Float64
+    regularizer::Float64
     evaluation_type::Symbol
 
-    function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}; database::AbstractString=":memory:")
+    function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
+        name = join([
+                base_name,
+                run_data_row.n_rep_periods,
+                run_data_row.period_length,
+                string(run_data_row.clustering_type),
+                semimetric_to_string(run_data_row.distance),
+                string(run_data_row.weight_type),
+            ],
+            "_"
+        )
         return new(
-            run_data_row.name,
+            name,
             run_data_row.n_rep_periods,
             run_data_row.period_length,
             run_data_row.clustering_type,
@@ -70,6 +96,7 @@ struct ExperimentData
             run_data_row.weight_type,
             run_data_row.niters,
             run_data_row.learning_rate,
+            run_data_row.regularizer,
             run_data_row.evaluation_type
         )
     end
@@ -111,8 +138,17 @@ end
 struct ExperimentResult
     name::String
     seed::Int
+    n_rep_periods::Int
+    period_length::Int
+    clustering_type::Symbol
+    distance::SemiMetric
+    weight_type::Symbol
     termination_status::String
-    objective_value::Float64
+    objective_value::Union{Float64,Nothing}
+    evaluation_termination_status::String
+    evaluated_objective_value::Union{Float64,Nothing}
+    total_spillage::Float64
+    total_borrow::Float64
     time_to_preprocess::Float64
     time_to_cluster::Float64
     time_to_fit_weights::Float64
@@ -120,41 +156,88 @@ struct ExperimentResult
     time_to_solve::Float64
 
     function ExperimentResult(
-        name::String,
+        data::ExperimentData,
         seed::Int,
         solved_model::JuMP.AbstractModel,
+        eval_model::Union{JuMP.AbstractModel,Nothing},
         time_to_preprocess::Float64,
         time_to_cluster::Float64,
         time_to_fit_weights::Float64,
         time_to_formulate_model::Float64,
         time_to_solve::Float64,
     )
-        if JuMP.is_solved_and_feasible(solved_model)
-            return new(
-                name,
-                seed,
-                solved_model |> termination_status |> string,
-                solved_model |> objective_value,
-                time_to_preprocess,
-                time_to_cluster,
-                time_to_fit_weights,
-                time_to_formulate_model,
-                time_to_solve,
-            )
+        name = data.name
+        n_rep_periods = data.n_rep_periods
+        period_length = data.period_length
+        clustering_type = data.clustering_type
+        distance = data.distance
+        weight_type = data.weight_type
+        termination_status = solved_model |> JuMP.termination_status |> string
+        objective_value = if JuMP.is_solved_and_feasible(solved_model)
+            solved_model |> JuMP.objective_value
         else
-            return new(
-                name,
-                seed,
-                solved_model |> termination_status |> string,
-                Float64.Inf,
-                time_to_read,
-                time_to_preprocess,
-                time_to_cluster,
-                time_to_fit_weights,
-                time_to_formulate_model,
-                time_to_solve,
-            )
+            nothing
         end
-
+        evaluation_termination_status = if eval_model !== nothing
+            eval_model |> JuMP.termination_status |> string
+        else
+            "N/A"
+        end
+        evaluated_objective_value = if eval_model !== nothing && JuMP.is_solved_and_feasible(eval_model)
+            eval_model |> JuMP.objective_value
+        else
+            nothing
+        end
+        total_spillage = if eval_model !== nothing
+            value.(eval_model[:spillage]) |> sum
+        else
+            0.0
+        end
+        total_borrow = if eval_model !== nothing
+            value.(eval_model[:borrow]) |> sum
+        else
+            0.0
+        end
+        return new(
+            name,
+            seed,
+            n_rep_periods,
+            period_length,
+            clustering_type,
+            distance,
+            weight_type,
+            termination_status,
+            objective_value,
+            evaluation_termination_status,
+            evaluated_objective_value,
+            total_spillage,
+            total_borrow,
+            time_to_preprocess,
+            time_to_cluster,
+            time_to_fit_weights,
+            time_to_formulate_model,
+            time_to_solve,
+        )
     end
 end
+
+Tables.columns(res::ExperimentResult) = (;
+    name=[res.name],
+    seed=[res.seed],
+    n_rep_periods=[res.n_rep_periods],
+    period_length=[res.period_length],
+    clustering_type=[string(res.clustering_type)],
+    distance=[semimetric_to_string(res.distance)],
+    weight_type=[string(res.weight_type)],
+    termination_status=[res.termination_status],
+    objective_value=[res.objective_value],
+    evaluation_termination_status=[res.evaluation_termination_status],
+    evaluated_objective_value=[res.evaluated_objective_value],
+    total_spillage=[res.total_spillage],
+    total_borrow=[res.total_borrow],
+    time_to_preprocess=[res.time_to_preprocess],
+    time_to_cluster=[res.time_to_cluster],
+    time_to_fit_weights=[res.time_to_fit_weights],
+    time_to_formulate_model=[res.time_to_formulate_model],
+    time_to_solve=[res.time_to_solve],
+)

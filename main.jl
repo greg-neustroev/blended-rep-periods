@@ -14,21 +14,30 @@ using Random
 n_random_seeds = 5
 Random.seed!(123)
 seeds = rand(1:1000, n_random_seeds)
-input = "tyndp2024"
+inputs = ["tyndp2024",]
+inputs_dir = joinpath(dirname(@__FILE__), "inputs")
+outputs_dir = joinpath(dirname(@__FILE__), "outputs")
+if !isdir(outputs_dir)
+    mkpath(outputs_dir)
+end
 
-@info "Reading experiment configuration"
-base_dir = joinpath(dirname(@__FILE__), "inputs")
-run_data = joinpath(base_dir, "$(input).csv") |> RunData
+for input in inputs
+    @info "Reading experiment configuration"
+    run_data = joinpath(inputs_dir, "$(input).csv") |> RunData
 
-@info "Reading data shared across all experiments"
-connection = DBInterface.connect(DuckDB.DB, ":memory:")
-read_data_from_dir(connection, joinpath(base_dir, input))
+    @info "Reading data shared across all experiments"
+    connection = DBInterface.connect(DuckDB.DB, ":memory:")
+    read_data_from_dir(connection, joinpath(inputs_dir, input))
 
-for seed in seeds
-    for run_data_row in run_data |> eachrow
-        experiment_data = run_data_row |> ExperimentData
-        model = Gurobi.Optimizer |> Model
-        eval_model = Gurobi.Optimizer |> Model
-        run_experiment(experiment_data, model, eval_model, connection, seed)
+    output_file = joinpath(outputs_dir, "$(input).csv")
+
+    for seed in seeds
+        for run_data_row in run_data |> eachrow
+            experiment_data = ExperimentData(run_data_row, input)
+            model = Gurobi.Optimizer |> Model
+            eval_model = Gurobi.Optimizer |> Model
+            result = run_experiment(experiment_data, model, eval_model, connection, seed)
+            save_result_to_csv(output_file, result)
+        end
     end
 end

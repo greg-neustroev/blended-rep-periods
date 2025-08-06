@@ -1,4 +1,4 @@
-export read_data_from_dir
+export read_data_from_dir, save_result_to_csv
 
 function read_data_from_dir(connection, input_dir)
     files = glob("*.csv", input_dir)
@@ -557,4 +557,10 @@ function clustering_type_to_method(clustering_type, weight_type)
     else
         clustering_type
     end
+end
+
+function save_result_to_csv(path::String, result::ExperimentResult)
+    row = result |> DataFrame
+    write_header = !isfile(path)
+    CSV.write(path, row; append=true, writeheader=write_header)
 end

@@ -168,6 +168,7 @@ function fit_rep_period_weights!(
   rp_matrix::Matrix{Float64};
   weight_type::Symbol=:dirac,
   tol::Float64=10e-3,
+  regularizer::Float64=0.0,
   args...,
 )
   # Determine the appropriate projection method
@@ -198,7 +199,7 @@ function fit_rep_period_weights!(
   for period ∈ 1:n_periods  # TODO: this can be parallelized; investigate
     target_vector = clustering_matrix[:, period]
     x = initial_weight_matrix[:, period]
-    subgradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
+    subgradient = x -> rp_matrix' * (rp_matrix * x - target_vector) + regularizer * sign.(x)
     # if weight_type ≡ :conical_bounded
     #   x = vcat(Vector(weight_matrix[period, 1:(n_rp-1)]), [0.0])
     # else
