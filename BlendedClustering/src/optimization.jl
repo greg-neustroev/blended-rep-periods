@@ -1,4 +1,4 @@
-function create_optimization_model(connection, model, clustering_result)
+function create_optimization_model!(connection, model, clustering_result)
     # Create scalars
     operations_weight = get_scalar(connection, "operations_weight")
     timestep_duration = get_scalar(connection, "timestep_duration")
@@ -35,6 +35,7 @@ function create_optimization_model(connection, model, clustering_result)
     @variable(model, state_of_charge_inter_0[S_seas] ≥ 0)
     @variable(model, state_of_charge_inter[S_seas, D] ≥ 0)
     @variable(model, spillage[S_seas, R, H] ≥ 0)
+    @variable(model, borrow[S_seas, R, H] ≥ 0)
     @variable(model, flow[L, R, H])
 
     @info "Creating objective"
@@ -81,6 +82,21 @@ function create_optimization_model(connection, model, clustering_result)
                 sum([
                     row.spillage_cost * spillage[row.id, r, h]
                     for row in rows(spillage_cost_data)
+                ])
+                for r in R, h in H
+            ])
+    end
+    borrow_cost_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM borrow_cost_objective_view"
+    )
+    if !isempty(borrow_cost_data)
+        cost_of_operations +=
+            sum([
+                rp_weight[r] *
+                sum([
+                    row.borrow_cost * borrow[row.id, r, h]
+                    for row in rows(borrow_cost_data)
                 ])
                 for r in R, h in H
             ])
@@ -202,6 +218,8 @@ function create_optimization_model(connection, model, clustering_result)
                 -
                 spillage[row.id, row.rep_period, 1]
                 +
+                borrow[row.id, row.rep_period, 1]
+                +
                 row.inflow_profile * row.peak_inflow
             )
         else
@@ -217,6 +235,8 @@ function create_optimization_model(connection, model, clustering_result)
                 ) * timestep_duration
                 -
                 spillage[row.id, row.rep_period, row.timestep]
+                +
+                borrow[row.id, row.rep_period, row.timestep]
                 +
                 row.inflow_profile * row.peak_inflow
             )
@@ -240,6 +260,8 @@ function create_optimization_model(connection, model, clustering_result)
                 -
                 spillage[row.id, row.rep_period, 1]
                 +
+                borrow[row.id, row.rep_period, 1]
+                +
                 row.inflow_profile * row.peak_inflow
             )
         else
@@ -251,6 +273,8 @@ function create_optimization_model(connection, model, clustering_result)
                 -power_out[row.id, row.rep_period, row.timestep] / row.efficiency_out * timestep_duration
                 -
                 spillage[row.id, row.rep_period, row.timestep]
+                +
+                borrow[row.id, row.rep_period, row.timestep]
                 +
                 row.inflow_profile * row.peak_inflow
             )
@@ -304,12 +328,12 @@ function create_optimization_model(connection, model, clustering_result)
     for row in rows(initial_storage_data)
         @constraint(model, state_of_charge_inter_0[row.id] == row.initial_storage_level)
         @constraint(model,
-            state_of_charge_inter_0[row.id]
+            state_of_charge_inter[row.id, D[end]]
             ==
             sum(
                 clustering_result.weight_matrix[D[end], r]
                 *
-                state_of_charge_intra_0[row.id, r]
+                state_of_charge_intra[row.id, r, H[end]]
                 for r in R
             )
         )

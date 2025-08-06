@@ -28,6 +28,7 @@ for seed in seeds
     for run_data_row in run_data |> eachrow
         experiment_data = run_data_row |> ExperimentData
         model = Gurobi.Optimizer |> Model
-        run_experiment(experiment_data, model, connection, seed)
+        eval_model = Gurobi.Optimizer |> Model
+        run_experiment(experiment_data, model, eval_model, connection, seed)
     end
 end

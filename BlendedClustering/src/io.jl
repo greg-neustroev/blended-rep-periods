@@ -359,6 +359,15 @@ function create_period_independent_views(connection)
     DBInterface.execute(
         connection,
         """
+        CREATE OR REPLACE VIEW borrow_cost_objective_view AS
+        SELECT id, borrow_cost
+        FROM seasonal_storage_assets
+        """
+    )
+
+    DBInterface.execute(
+        connection,
+        """
         CREATE OR REPLACE VIEW power_out_expression_view AS
         SELECT a.id, a.location, t.carrier_out
         FROM assets AS a

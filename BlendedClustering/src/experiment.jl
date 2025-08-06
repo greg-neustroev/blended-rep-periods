@@ -3,6 +3,7 @@ export run_experiment
 function run_experiment(
     experiment_data::ExperimentData,
     model::JuMP.GenericModel{Float64},
+    eval_model::JuMP.GenericModel{Float64},
     connection,
     seed::Int
 )
@@ -14,6 +15,7 @@ function run_experiment(
     clustering_type = experiment_data.clustering_type
     weight_type = experiment_data.weight_type
     period_length = experiment_data.period_length
+    evaluation_type = experiment_data.evaluation_type
 
     @info "Preprocessing data"
     # Create the database views for quering constraints and objective data
@@ -43,20 +45,20 @@ function run_experiment(
 
     # Create model
     @info styled"{bold:Creating the model}"
-    time_to_formulate_model = @elapsed create_optimization_model(connection, model, clustering_result)
+
+    time_to_formulate_model = @elapsed create_optimization_model!(connection, model, clustering_result)
 
     # Solve
     @info styled"{bold:Solving the model}"
     time_to_solve = @elapsed optimize!(model)
     @info "Model termination status: $(JuMP.termination_status(model))"
 
-    if JuMP.termination_status(model) == MOI.OPTIMAL
+    if JuMP.termination_status(model) == MOI.OPTIMAL && evaluation_type != :none
         # Evaluate the solution. Resolve the full problem with some of the
         # decision variables fixed to the values from the clustering model
         # to get the true objective value.
         @info styled"{bold:Evaluating the model}"
-
-
+        evaluate_solution!(connection, model, eval_model, period_length, evaluation_type)
     end
 
     # Save the results

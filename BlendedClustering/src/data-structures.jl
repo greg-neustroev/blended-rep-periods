@@ -57,7 +57,7 @@ struct ExperimentData
     distance::SemiMetric
     weight_type::Symbol
     niters::Int
-    learning_rate::Float32
+    learning_rate::Float64
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}; database::AbstractString=":memory:")
