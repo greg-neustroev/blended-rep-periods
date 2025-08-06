@@ -69,7 +69,7 @@ function run_experiment(
         experiment_data,
         seed,
         model,
-        evaluation_type != :none ? eval_model : nothing,
+        evaluation_type == :none ? nothing : eval_model,
         time_to_preprocess,
         time_to_cluster,
         time_to_fit_weights,

@@ -84,6 +84,9 @@ struct ExperimentData
                 string(run_data_row.clustering_type),
                 semimetric_to_string(run_data_row.distance),
                 string(run_data_row.weight_type),
+                run_data_row.niters,
+                run_data_row.learning_rate,
+                run_data_row.regularizer,
             ],
             "_"
         )
@@ -144,9 +147,9 @@ struct ExperimentResult
     distance::SemiMetric
     weight_type::Symbol
     termination_status::String
-    objective_value::Union{Float64,Nothing}
+    objective_value::Union{Float64,Missing}
     evaluation_termination_status::String
-    evaluated_objective_value::Union{Float64,Nothing}
+    evaluated_objective_value::Union{Float64,Missing}
     total_spillage::Float64
     total_borrow::Float64
     time_to_preprocess::Float64
@@ -176,24 +179,24 @@ struct ExperimentResult
         objective_value = if JuMP.is_solved_and_feasible(solved_model)
             solved_model |> JuMP.objective_value
         else
-            nothing
+            missing
         end
-        evaluation_termination_status = if eval_model !== nothing
+        evaluation_termination_status = if !isnothing(eval_model)
             eval_model |> JuMP.termination_status |> string
         else
             "N/A"
         end
-        evaluated_objective_value = if eval_model !== nothing && JuMP.is_solved_and_feasible(eval_model)
+        evaluated_objective_value = if !isnothing(eval_model) && JuMP.is_solved_and_feasible(eval_model)
             eval_model |> JuMP.objective_value
         else
-            nothing
+            missing
         end
-        total_spillage = if eval_model !== nothing
+        total_spillage = if !isnothing(eval_model)
             value.(eval_model[:spillage]) |> sum
         else
             0.0
         end
-        total_borrow = if eval_model !== nothing
+        total_borrow = if !isnothing(eval_model)
             value.(eval_model[:borrow]) |> sum
         else
             0.0
