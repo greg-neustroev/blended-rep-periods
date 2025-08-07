@@ -379,11 +379,63 @@ function create_optimization_model!(connection, model, clustering_result)
         @constraint(model, power_in[s, r, h] <= accumulated_capacity[s])
     end
 
-    @info "- Adding intraperiod maximum state of charge constraints"
+    @info "- Adding intra-period ramping constraints"
+    intra_period_ramping_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM intra_period_ramping_constraint_view"
+    )
+    for row in rows(intra_period_ramping_data)
+        @constraint(model,
+            power_out[row.id, row.rep_period, row.timestep]
+            -
+            power_out[row.id, row.rep_period, row.timestep-1]
+            <=
+            row.ramping_rate * timestep_duration * accumulated_capacity[row.id]
+        )
+        @constraint(model,
+            power_out[row.id, row.rep_period, row.timestep-1]
+            -
+            power_out[row.id, row.rep_period, row.timestep]
+            <=
+            row.ramping_rate * timestep_duration * accumulated_capacity[row.id]
+        )
+    end
+
+    @info "- Adding inter-period ramping constraints"
+    inter_period_ramping_data = DBInterface.execute(
+        connection,
+        "SELECT * FROM inter_period_ramping_constraint_view"
+    )
+    @expression(model, power_out_inter_start[g in G, d in D[2:end]], sum(
+        clustering_result.weight_matrix[d, r] * power_out[g, r, 1]
+        for r in R
+    ))
+    @expression(model, power_out_inter_end[g in G, d in D[1:(end-1)]], sum(
+        clustering_result.weight_matrix[d, r] * power_out[g, r, H[end]]
+        for r in R
+    ))
+    for row in rows(inter_period_ramping_data)
+        @constraint(model,
+            power_out_inter_start[row.id, row.period]
+            -
+            power_out_inter_end[row.id, row.period-1]
+            <=
+            row.ramping_rate * timestep_duration * accumulated_capacity[row.id]
+        )
+        @constraint(model,
+            power_out_inter_end[row.id, row.period-1]
+            -
+            power_out_inter_start[row.id, row.period]
+            <=
+            row.ramping_rate * timestep_duration * accumulated_capacity[row.id]
+        )
+    end
+
+    @info "- Adding intra-period maximum state of charge constraints"
     intraperiod_storage_capacity_data = DBInterface.execute(
         connection,
         """
-        SELECT * FROM intraperiod_storage_capacity_constraint_view
+        SELECT * FROM intra_period_storage_capacity_constraint_view
         """
     )
     for row in rows(intraperiod_storage_capacity_data)
@@ -393,10 +445,10 @@ function create_optimization_model!(connection, model, clustering_result)
         )
     end
 
-    @info "- Adding interperiod maximum state of charge constraints"
+    @info "- Adding inter-period maximum state of charge constraints"
     interperiod_storage_capacity_data = DBInterface.execute(
         connection,
-        "SELECT * FROM interperiod_storage_capacity_constraint_view"
+        "SELECT * FROM inter_period_storage_capacity_constraint_view"
     )
     for row in rows(interperiod_storage_capacity_data)
         JuMP.set_lower_bound(

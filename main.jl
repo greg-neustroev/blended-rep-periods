@@ -38,6 +38,7 @@ for input in inputs
             eval_model = Gurobi.Optimizer |> Model
             result = run_experiment(experiment_data, model, eval_model, connection, seed)
             save_result_to_csv(output_file, result, time_to_read)
+            save_variables_to_csv(model, outputs_dir, result.name, seed)
         end
     end
 end

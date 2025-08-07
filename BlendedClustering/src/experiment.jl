@@ -61,8 +61,8 @@ function run_experiment(
         evaluate_solution!(connection, model, eval_model, period_length, evaluation_type)
     end
 
-    # Save the results
-    @info styled"{bold:Saving the results}"
+    # Return the results
+    @info styled"{bold:Returning the results}"
     result = ExperimentResult(
         experiment_data,
         seed,
