@@ -16,7 +16,6 @@ struct RunData <: AbstractDataFrame
             "weight_type",
             "niters",
             "learning_rate",
-            "regularizer",
             "evaluation_type",
         ] |> Set
         df_columns = df |> names |> Set
@@ -73,7 +72,6 @@ struct ExperimentData
     weight_type::Symbol
     niters::Int
     learning_rate::Float64
-    regularizer::Float64
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -86,7 +84,6 @@ struct ExperimentData
                 string(run_data_row.weight_type),
                 run_data_row.niters,
                 run_data_row.learning_rate,
-                run_data_row.regularizer,
             ],
             "_"
         )
@@ -99,7 +96,6 @@ struct ExperimentData
             run_data_row.weight_type,
             run_data_row.niters,
             run_data_row.learning_rate,
-            run_data_row.regularizer,
             run_data_row.evaluation_type
         )
     end

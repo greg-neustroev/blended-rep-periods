@@ -27,7 +27,7 @@ for input in inputs
 
     @info "Reading data shared across all experiments"
     connection = DBInterface.connect(DuckDB.DB, ":memory:")
-    read_data_from_dir(connection, joinpath(inputs_dir, input))
+    time_to_read = @elapsed read_data_from_dir(connection, joinpath(inputs_dir, input))
 
     output_file = joinpath(outputs_dir, "$(input).csv")
 
@@ -37,7 +37,7 @@ for input in inputs
             model = Gurobi.Optimizer |> Model
             eval_model = Gurobi.Optimizer |> Model
             result = run_experiment(experiment_data, model, eval_model, connection, seed)
-            save_result_to_csv(output_file, result)
+            save_result_to_csv(output_file, result, time_to_read)
         end
     end
 end

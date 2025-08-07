@@ -16,7 +16,6 @@ function run_experiment(
     weight_type = experiment_data.weight_type
     period_length = experiment_data.period_length
     evaluation_type = experiment_data.evaluation_type
-    regularizer = experiment_data.regularizer
 
     @info "Preprocessing data"
     # Create the database views for quering constraints and objective data
@@ -34,7 +33,6 @@ function run_experiment(
         weight_type=experiment_data.weight_type,
         learning_rate=experiment_data.learning_rate,
         niters=experiment_data.niters,
-        regularizer=regularizer,
     )
 
     # Register the representative period profiles in DuckDB

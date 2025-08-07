@@ -559,8 +559,9 @@ function clustering_type_to_method(clustering_type, weight_type)
     end
 end
 
-function save_result_to_csv(path::String, result::ExperimentResult)
+function save_result_to_csv(path::String, result::ExperimentResult, time_to_read::Float64)
     row = result |> DataFrame
+    row.time_to_read .= time_to_read
     write_header = !isfile(path)
     CSV.write(path, row; append=true, writeheader=write_header)
 end

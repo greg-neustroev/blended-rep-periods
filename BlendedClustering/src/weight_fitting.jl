@@ -160,15 +160,14 @@ The arguments:
   - `tol`: algorithm's tolerance; when the weights are adjusted by a value less
     then or equal to `tol`, they stop being fitted further.
   - other arguments control the projected subgradient method; they are passed
-    through to `TulipaClustering.projected_subgradient_descent!`.
+    through to `projected_subgradient_descent!`.
 """
 function fit_rep_period_weights!(
   weight_matrix::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}},
   clustering_matrix::Matrix{Float64},
   rp_matrix::Matrix{Float64};
   weight_type::Symbol=:dirac,
-  tol::Float64=10e-3,
-  regularizer::Float64=0.0,
+  tol::Float64=1e-2,
   args...,
 )
   # Determine the appropriate projection method
@@ -199,7 +198,7 @@ function fit_rep_period_weights!(
   for period ∈ 1:n_periods  # TODO: this can be parallelized; investigate
     target_vector = clustering_matrix[:, period]
     x = initial_weight_matrix[:, period]
-    subgradient = x -> rp_matrix' * (rp_matrix * x - target_vector) + regularizer * sign.(x)
+    subgradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
     # if weight_type ≡ :conical_bounded
     #   x = vcat(Vector(weight_matrix[period, 1:(n_rp-1)]), [0.0])
     # else
@@ -252,7 +251,7 @@ bound the total weight by one.
 The arguments:
 
   - `clustering_result`: the result of running
-    `TulipaClustering.find_representative_periods`
+    `find_representative_periods`
   - `weight_type`: the type of weights to find; possible values are:
       - `:convex`: each period is represented as a convex sum of the
         representative periods (a sum with nonnegative weights adding into one)
@@ -264,12 +263,12 @@ The arguments:
   - `tol`: algorithm's tolerance; when the weights are adjusted by a value less
     then or equal to `tol`, they stop being fitted further.
   - other arguments control the projected subgradient method; they are passed
-    through to `TulipaClustering.projected_subgradient_descent!`.
+    through to `projected_subgradient_descent!`.
 """
 function fit_rep_period_weights!(
   clustering_result::ClusteringResult;
   weight_type::Symbol=:dirac,
-  tol::Float64=10e-3,
+  tol::Float64=1e-2,
   args...,
 )
   fit_rep_period_weights!(
