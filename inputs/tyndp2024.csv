@@ -12,9 +12,6 @@ n_rep_periods,period_length,clustering_type,distance,weight_type,niters,learning
 10,24,k_means,euclidean,conical,1000,0.001,storage_regret
 10,24,k_medoids,euclidean,conical,1000,0.001,storage_regret
 10,24,hull,euclidean,conical,1000,0.001,storage_regret
-10,24,k_means,cosine,conical_bounded,1000,0.001,storage_regret
-10,24,k_medoids,cosine,conical_bounded,1000,0.001,storage_regret
-10,24,hull,cosine,conical_bounded,1000,0.001,storage_regret
 10,24,k_means,cosine,conical,1000,0.001,storage_regret
 10,24,k_medoids,cosine,conical,1000,0.001,storage_regret
 10,24,hull,cosine,conical,1000,0.001,storage_regret
@@ -30,9 +27,6 @@ n_rep_periods,period_length,clustering_type,distance,weight_type,niters,learning
 100,24,k_means,euclidean,conical,1000,0.001,storage_regret
 100,24,k_medoids,euclidean,conical,1000,0.001,storage_regret
 100,24,hull,euclidean,conical,1000,0.001,storage_regret
-100,24,k_means,cosine,conical_bounded,1000,0.001,storage_regret
-100,24,k_medoids,cosine,conical_bounded,1000,0.001,storage_regret
-100,24,hull,cosine,conical_bounded,1000,0.001,storage_regret
 100,24,k_means,cosine,conical,1000,0.001,storage_regret
 100,24,k_medoids,cosine,conical,1000,0.001,storage_regret
 100,24,hull,cosine,conical,1000,0.001,storage_regret
@@ -48,9 +42,6 @@ n_rep_periods,period_length,clustering_type,distance,weight_type,niters,learning
 20,24,k_means,euclidean,conical,1000,0.001,storage_regret
 20,24,k_medoids,euclidean,conical,1000,0.001,storage_regret
 20,24,hull,euclidean,conical,1000,0.001,storage_regret
-20,24,k_means,cosine,conical_bounded,1000,0.001,storage_regret
-20,24,k_medoids,cosine,conical_bounded,1000,0.001,storage_regret
-20,24,hull,cosine,conical_bounded,1000,0.001,storage_regret
 20,24,k_means,cosine,conical,1000,0.001,storage_regret
 20,24,k_medoids,cosine,conical,1000,0.001,storage_regret
 20,24,hull,cosine,conical,1000,0.001,storage_regret
@@ -66,9 +57,6 @@ n_rep_periods,period_length,clustering_type,distance,weight_type,niters,learning
 70,24,k_means,euclidean,conical,1000,0.001,storage_regret
 70,24,k_medoids,euclidean,conical,1000,0.001,storage_regret
 70,24,hull,euclidean,conical,1000,0.001,storage_regret
-70,24,k_means,cosine,conical_bounded,1000,0.001,storage_regret
-70,24,k_medoids,cosine,conical_bounded,1000,0.001,storage_regret
-70,24,hull,cosine,conical_bounded,1000,0.001,storage_regret
 70,24,k_means,cosine,conical,1000,0.001,storage_regret
 70,24,k_medoids,cosine,conical,1000,0.001,storage_regret
 70,24,hull,cosine,conical,1000,0.001,storage_regret
@@ -84,9 +72,6 @@ n_rep_periods,period_length,clustering_type,distance,weight_type,niters,learning
 30,24,k_means,euclidean,conical,1000,0.001,storage_regret
 30,24,k_medoids,euclidean,conical,1000,0.001,storage_regret
 30,24,hull,euclidean,conical,1000,0.001,storage_regret
-30,24,k_means,cosine,conical_bounded,1000,0.001,storage_regret
-30,24,k_medoids,cosine,conical_bounded,1000,0.001,storage_regret
-30,24,hull,cosine,conical_bounded,1000,0.001,storage_regret
 30,24,k_means,cosine,conical,1000,0.001,storage_regret
 30,24,k_medoids,cosine,conical,1000,0.001,storage_regret
 30,24,hull,cosine,conical,1000,0.001,storage_regret
@@ -102,9 +87,6 @@ n_rep_periods,period_length,clustering_type,distance,weight_type,niters,learning
 40,24,k_means,euclidean,conical,1000,0.001,storage_regret
 40,24,k_medoids,euclidean,conical,1000,0.001,storage_regret
 40,24,hull,euclidean,conical,1000,0.001,storage_regret
-40,24,k_means,cosine,conical_bounded,1000,0.001,storage_regret
-40,24,k_medoids,cosine,conical_bounded,1000,0.001,storage_regret
-40,24,hull,cosine,conical_bounded,1000,0.001,storage_regret
 40,24,k_means,cosine,conical,1000,0.001,storage_regret
 40,24,k_medoids,cosine,conical,1000,0.001,storage_regret
 40,24,hull,cosine,conical,1000,0.001,storage_regret
@@ -120,9 +102,6 @@ n_rep_periods,period_length,clustering_type,distance,weight_type,niters,learning
 50,24,k_means,euclidean,conical,1000,0.001,storage_regret
 50,24,k_medoids,euclidean,conical,1000,0.001,storage_regret
 50,24,hull,euclidean,conical,1000,0.001,storage_regret
-50,24,k_means,cosine,conical_bounded,1000,0.001,storage_regret
-50,24,k_medoids,cosine,conical_bounded,1000,0.001,storage_regret
-50,24,hull,cosine,conical_bounded,1000,0.001,storage_regret
 50,24,k_means,cosine,conical,1000,0.001,storage_regret
 50,24,k_medoids,cosine,conical,1000,0.001,storage_regret
 50,24,hull,cosine,conical,1000,0.001,storage_regret
