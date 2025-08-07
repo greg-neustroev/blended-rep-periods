@@ -613,7 +613,7 @@ function save_variable_to_csv(
     df.value = value.(df.variable)
     select!(df, Not(:variable))
     df.seed .= seed
-    select!(df, [:seed, Not(:seed)]) # move seed to the first column
+    select!(df, Cols(:seed, Not(:seed))) # move seed to the first column
 
     path = joinpath(subdir, filename)
     write_header = !isfile(path)
