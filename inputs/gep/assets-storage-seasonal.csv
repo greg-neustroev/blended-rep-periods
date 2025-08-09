@@ -1,1 +1,1 @@
-id,initial_storage_level,peak_inflow,spillage_cost,can_charge
+id,initial_storage_level,peak_inflow,spillage_cost,borrow_cost,can_charge

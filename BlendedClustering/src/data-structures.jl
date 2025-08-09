@@ -187,12 +187,12 @@ struct ExperimentResult
         else
             missing
         end
-        total_spillage = if !isnothing(eval_model)
+        total_spillage = if !isnothing(eval_model) && haskey(eval_model, :spillage) && !isempty(eval_model[:spillage])
             value.(eval_model[:spillage]) |> sum
         else
             0.0
         end
-        total_borrow = if !isnothing(eval_model)
+        total_borrow = if !isnothing(eval_model) && haskey(eval_model, :borrow) && !isempty(eval_model[:borrow])
             value.(eval_model[:borrow]) |> sum
         else
             0.0

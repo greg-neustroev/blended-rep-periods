@@ -246,28 +246,48 @@ function create_profile_data_views(connection, period_length)
 end
 
 function create_reservoir_profile_data_views(connection, period_length)
-    DBInterface.execute(
-        connection,
-        """
-        CREATE OR REPLACE VIEW profiles_reservoir_levels
-        AS 
-        (SELECT 
-        ((timestep - 1) // $period_length) + 1 AS period,
-        ((timestep - 1) % $period_length) + 1 AS timestep,
-        id, value
-        FROM
-        (UNPIVOT
-            (SELECT * FROM profiles_reservoir_levels_raw)
-        ON COLUMNS
-            (* EXCLUDE(timestep))
-        INTO
-            NAME id
-            VALUE value
-        ))
-        ORDER BY
-            period, timestep, id
-        """
-    )
+    has_reservoir_levels =
+        DBInterface.execute(
+            connection,
+            "SELECT EXISTS (SELECT 1 FROM profiles_reservoir_levels_raw) AS has_rows"
+        ) |> first |> first
+    if has_reservoir_levels
+        DBInterface.execute(
+            connection,
+            """
+            CREATE OR REPLACE VIEW profiles_reservoir_levels
+            AS 
+            (SELECT 
+            ((timestep - 1) // $period_length) + 1 AS period,
+            ((timestep - 1) % $period_length) + 1 AS timestep,
+            id, value
+            FROM
+            (UNPIVOT
+                (SELECT * FROM profiles_reservoir_levels_raw)
+            ON COLUMNS
+                (* EXCLUDE(timestep))
+            INTO
+                NAME id
+                VALUE value
+            ))
+            ORDER BY
+                period, timestep, id
+            """
+        )
+    else
+        DBInterface.execute(
+            connection,
+            """
+            CREATE OR REPLACE VIEW profiles_reservoir_levels AS
+            SELECT
+                CAST(NULL AS INTEGER) AS period,
+                CAST(NULL AS INTEGER) AS timestep,
+                CAST(NULL AS TEXT) AS id,
+                CAST(NULL AS DOUBLE) AS value
+            WHERE FALSE
+            """
+        )
+    end
 
     DBInterface.execute(
         connection,
