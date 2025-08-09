@@ -475,41 +475,16 @@ function find_representative_periods(
   n_rp::Int;
   drop_incomplete_last_period::Bool=false,
   method::Symbol=:k_means,
-  distance::SemiMetric=SqEuclidean(),
-  initial_representatives::AbstractDataFrame=DataFrame(),
+  distance::SemiMetric=Euclidean(),
   args...,
 )
-  # 1. Check that the number of RPs makes sense. The first check can be done immediately,
-  # The second check is done after we compute the auxiliary data
-  if n_rp < 1
-    throw(
-      ArgumentError(
-        "The number of representative periods is $n_rp but has to be at least 1.",
-      ),
-    )
-  end
 
   # Find auxiliary data and pre-compute additional constants that are used multiple times alter
   aux = find_auxiliary_data(clustering_data)
-  n_periods = aux.n_periods
-
-  if n_rp > n_periods
-    throw(
-      ArgumentError(
-        "The number of representative periods exceeds the total number of periods, $n_rp > $n_periods.",
-      ),
-    )
-  end
-
   has_incomplete_last_period = aux.last_period_duration ≠ aux.period_duration
   is_last_period_excluded = has_incomplete_last_period && !drop_incomplete_last_period
+  n_periods = aux.n_periods
   n_complete_periods = has_incomplete_last_period ? n_periods - 1 : n_periods
-
-  if !isempty(initial_representatives)
-    i_rp = maximum(initial_representatives.period)
-  else
-    i_rp = 0
-  end
 
   # 2. Find the weights of the two types of periods and pre-build the weight matrix.
   # We assume that the only period that can be incomplete (i.e., has a duration
@@ -532,42 +507,14 @@ function find_representative_periods(
 
   # 3. Build the clustering matrix
 
-  if method in [:k_means, :k_medoids] && !isempty(initial_representatives)
-    # If clustering is k-means or k-medoids we remove amount of initial representatives from n_rp
-    n_rp -= i_rp
-    clustering_matrix, keys = df_to_matrix_and_keys(
-      clustering_data[clustering_data.period.≤n_complete_periods, :],
-      aux.key_columns,
-    )
-
-  elseif method in [:convex_hull, :convex_hull_with_null, :conical_hull] &&
-         !isempty(initial_representatives)
-    # If clustering is one of the hull methods, we add initial representatives to the clustering matrix in front
-    updated_clustering_data = deepcopy(clustering_data)
-    updated_clustering_data.period = updated_clustering_data.period .+ i_rp
-    clustering_data = vcat(initial_representatives, updated_clustering_data)
-
-    clustering_matrix, keys = df_to_matrix_and_keys(
-      clustering_data[
-        clustering_data.period.≤(n_complete_periods+maximum(
-          initial_representatives.period,
-        )),
-        :,
-      ],
-      aux.key_columns,
-    )
-  else
-    clustering_matrix, keys = df_to_matrix_and_keys(
-      clustering_data[clustering_data.period.≤n_complete_periods, :],
-      aux.key_columns,
-    )
-  end
+  # First, find the demand matrix and rescale it if needed
+  clustering_matrix, keys = df_to_matrix_and_keys(
+    clustering_data[clustering_data.period.≤n_complete_periods, :],
+    aux.key_columns,
+  )
 
   # 4. Do the clustering, now that the data is transformed into a matrix
-  if n_rp == 0 # If due to the additional representatives we have no clustering, create an empty placeholder
-    rp_matrix = nothing
-    assignments = Int[]
-  elseif method ≡ :k_means
+  if method ≡ :k_means
     # Do the clustering
     kmeans_result = kmeans(clustering_matrix, n_rp; distance, args...)
 
@@ -584,142 +531,45 @@ function find_representative_periods(
     rp_matrix = clustering_matrix[:, kmedoids_result.medoids]
     assignments = kmedoids_result.assignments
   elseif method ≡ :convex_hull
-    # Do the clustering, with initial indices if provided
-    initial_indices = if !isempty(initial_representatives)
-      collect(1:i_rp)
-    else
-      nothing
-    end
-    hull_indices = greedy_convex_hull(
-      clustering_matrix;
-      initial_indices=initial_indices,
-      n_points=n_rp,
-      distance,
-    )
+    hull_indices = greedy_convex_hull(clustering_matrix; n_points=n_rp, distance)
 
-    # Reinterpret the results
     rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [
-      argmin([
-        distance(clustering_matrix[:, h], clustering_matrix[:, p+i_rp]) for
-        h in hull_indices
-      ]) for p in 1:n_complete_periods
-    ]
-    clustering_matrix = clustering_matrix[:, (i_rp+1):end]
+    assignments = [argmin([distance(clustering_matrix[:, h], clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
   elseif method ≡ :convex_hull_with_null
-    # Check if we can add null to the clustering matrix. The distance to null can
-    # be undefined, e.g., for the cosine distance.
-    is_distance_to_zero_undefined =
-      isnan(distance(zeros(size(clustering_matrix, 1), 1), clustering_matrix[:, 1]))
-
+    is_distance_to_zero_undefined = isnan(distance(zeros(size(clustering_matrix, 1), 1), clustering_matrix[:, 1]))
     if is_distance_to_zero_undefined
-      throw(
-        ArgumentError(
-          "cannot add null to the clustering data because distance to it is undefined",
-        ),
-      )
-    end
-
-    # Add null to the clustering matrix
-    # Special thanks to Lotte Kremer for spotting a bug in the implementation here
-    matrix = [zeros(size(clustering_matrix, 1), 1) clustering_matrix]
-
-    # Do the clustering
-    hull_indices = greedy_convex_hull(
-      matrix;
-      n_points=n_rp + 1,
-      distance,
-      initial_indices=collect(1:(i_rp+1)),
-    )
-
-    # Remove null from the beginning and shift all indices by one
-    popfirst!(hull_indices)
-    hull_indices .-= 1
-
-    # Reinterpret the results
-    rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [
-      argmin([
-        distance(clustering_matrix[:, h], clustering_matrix[:, p+i_rp]) for
-        h in hull_indices
-      ]) for p in 1:n_complete_periods
-    ]
-    clustering_matrix = clustering_matrix[:, (i_rp+1):end]
-  elseif method ≡ :conical_hull
-    # Do a gnomonic projection (normalization) of the data
-    normal_vector = vec(mean(clustering_matrix; dims=2))
-    normalize!(normal_vector)
-    projection_coefficients = [
-      1.0 / dot(normal_vector, clustering_matrix[:, j]) for j in axes(clustering_matrix, 2)
-    ]
-    projected_matrix = [
-      clustering_matrix[i, j] * projection_coefficients[j] for
-      i in axes(clustering_matrix, 1), j in axes(clustering_matrix, 2)
-    ]
-
-    initial_indices = if !isempty(initial_representatives)
-      collect(1:i_rp)
+      hull_indices = greedy_convex_hull(clustering_matrix; n_points=n_rp, distance)
     else
-      nothing
+      matrix = [zeros(size(clustering_matrix, 1), 1) clustering_matrix]
+      hull_indices = greedy_convex_hull(matrix; n_points=n_rp + 1, distance, initial_indices=[1])
+      popfirst!(hull_indices)
     end
 
-    hull_indices = greedy_convex_hull(
-      projected_matrix;
-      n_points=n_rp,
-      distance,
-      mean_vector=normal_vector,
-      initial_indices=initial_indices,
-    )
-
-    # Reinterpret the results
     rp_matrix = clustering_matrix[:, hull_indices]
+    assignments = [argmin([distance(clustering_matrix[:, h], clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+  elseif method ≡ :conical_hull
+    normal_vector = vec(mean(clustering_matrix, dims=2))
+    normalize!(normal_vector)
+    projection_coefficients = [1.0 / dot(normal_vector, clustering_matrix[:, j]) for j ∈ axes(clustering_matrix, 2)]
+    projected_matrix = [clustering_matrix[i, j] * projection_coefficients[j] for i ∈ axes(clustering_matrix, 1), j ∈ axes(clustering_matrix, 2)]
+    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, distance=Euclidean(), mean_vector=normal_vector)
 
-    assignments = [
-      argmin([
-        distance(clustering_matrix[:, h], clustering_matrix[:, p+i_rp]) for
-        h in hull_indices
-      ]) for p in 1:n_complete_periods
-    ]
-    clustering_matrix = clustering_matrix[:, (i_rp+1):end]
+    rp_matrix = clustering_matrix[:, hull_indices]
+    assignments = [argmin([distance(clustering_matrix[:, h], clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
   else
     throw(ArgumentError("Clustering method is not supported"))
+  end
+
+  # Fill in the weight matrix using the assignments
+
+  for (p, rp) ∈ enumerate(assignments)
+    weight_matrix[p, rp] = complete_period_weight
   end
 
   # 5. Reinterpret the clustering results into a format we need
 
   # First, convert the matrix data back to dataframes using the previously saved key columns
-  rp_df = if rp_matrix ≡ nothing
-    nothing
-  else
-    matrix_and_keys_to_df(rp_matrix, keys)
-  end
-
-  # In case of initial representatives and a non hull method, we add them now
-  if !isempty(initial_representatives) && method in [:k_means, :k_medoids]
-    representatives_to_add =
-      select!(initial_representatives, :period => :rep_period, aux.key_columns..., :value)
-    representatives_to_add.rep_period .= representatives_to_add.rep_period .+ n_rp
-    rp_df = if rp_df === nothing
-      representatives_to_add
-    else
-      vcat(rp_df, representatives_to_add)
-    end
-    rename!(rp_df, :rep_period => :period)
-    rp_matrix, keys = df_to_matrix_and_keys(rp_df, aux.key_columns)
-    rename!(rp_df, :period => :rep_period)
-    rp_matrix
-    n_rp += i_rp
-  end
-
-  assignments = [
-    argmin([
-      distance(clustering_matrix[:, p], rp_matrix[:, r]) for r in axes(rp_matrix, 2)
-    ]) for p in 1:n_complete_periods
-  ]
-
-  for (p, rp) in enumerate(assignments)
-    weight_matrix[p, rp] = complete_period_weight
-  end
+  rp_df = matrix_and_keys_to_df(rp_matrix, keys)
 
   # Next, re-append the last period if it was excluded from clustering
   if is_last_period_excluded

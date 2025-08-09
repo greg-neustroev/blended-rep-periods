@@ -126,12 +126,12 @@ function projected_subgradient_descent!(
     y = x .- α .* g            # gradent step, may leave the domain
     x_new = projection(y)      # projection step, return to the domain
 
-    # if all(x_new .≈ 0.0)
-    #   break
-    # end
+    diff = maximum(x_new - x)  # how much did the vector change
+    if diff ≤ tol / niters
+      break
+    end
+
     x = x_new
-    #diff = maximum(x_new - x)  # how much did the vector change
-    #if diff ≤ tol
   end
   return x
 end
@@ -184,7 +184,8 @@ function fit_rep_period_weights!(
     # one.
     projection = project_onto_simplex
     n_data_points = size(rp_matrix, 1)
-    rp_matrix = hcat(rp_matrix, repeat([0.0], n_data_points))
+    rp_matrix = hcat(repeat([0.0], n_data_points), rp_matrix)
+    #weight_matrix = hcat(repeat([0.0], size(weight_matrix, 1)), weight_matrix)
   else
     throw(ArgumentError("Unsupported weight type."))
   end
@@ -194,31 +195,26 @@ function fit_rep_period_weights!(
 
   is_sparse = issparse(weight_matrix)
 
-  initial_weight_matrix = rp_matrix \ clustering_matrix
-  for period ∈ 1:n_periods  # TODO: this can be parallelized; investigate
+  initial_weight_matrix = weight_matrix' |> Matrix{Float64}
+  if weight_type ≡ :conical_bounded
+    # A zero column needs to be added to the initial weight matrix
+    initial_weight_matrix = vcat(zeros(1, size(initial_weight_matrix, 2)), initial_weight_matrix)
+  end
+  total_projection_error = 0.0
+  for period ∈ 1:n_periods
     target_vector = clustering_matrix[:, period]
-    x = initial_weight_matrix[:, period]
+    x = projection(initial_weight_matrix[:, period])
     subgradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
-    # if weight_type ≡ :conical_bounded
-    #   x = vcat(Vector(weight_matrix[period, 1:(n_rp-1)]), [0.0])
-    # else
-    #   x = Vector(weight_matrix[period, 1:n_rp])
-    # end
-    # # norm_x = norm(rp_matrix * x)
-    # # if norm_x > 0.0
-    # #   x .*= norm(target_vector) / norm(rp_matrix * x)
-    # # end
-    #@info "projection on target" projected_vector = (rp_matrix * x)' target_vector'
+    initial_projection_eror = sum((rp_matrix * x - target_vector) .^ 2)
     x = projected_subgradient_descent!(x; subgradient, projection, tol=tol * 0.01, args...)
-    #@info "projection weights" x'
-    #@info "projection on target" projected_vector = (rp_matrix * x)' target_vector'
-    # if norm(x, 1) ≈ 0.0
-    #   @error "||x|| = 0.0" projected_vector = (rp_matrix * if weight_type ≡ :conical_bounded
-    #     vcat(Vector(weight_matrix[period, 1:(n_rp-1)]), [0.0])
-    #   else
-    #     Vector(weight_matrix[period, 1:n_rp])
-    #   end)' target_vector'
-    # end
+    fitted_projection_error = sum((rp_matrix * x - target_vector) .^ 2)
+    if fitted_projection_error > initial_projection_eror
+      @warn "Projection error after fitting is larger than before fitting. Using the initial guess instead."
+      x = initial_weight_matrix[:, period]
+      total_projection_error += initial_projection_eror
+    else
+      total_projection_error += fitted_projection_error
+    end
     x[x.<tol] .= 0.0  # replace insignificant small values with zeros
     if weight_type ≡ :convex || weight_type ≡ :conical_bounded
       # Because some values might have been removed, convexity can be lost.
@@ -231,13 +227,14 @@ function fit_rep_period_weights!(
       end
     end
     if weight_type ≡ :conical_bounded
-      pop!(x)
+      popfirst!(x)
     end
     if is_sparse
       x = sparse(x)
     end
     weight_matrix[period, 1:length(x)] = x
   end
+  @info "Total projection error: $total_projection_error"
   return weight_matrix
 end
 

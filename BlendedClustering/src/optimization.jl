@@ -401,35 +401,35 @@ function create_optimization_model!(connection, model, clustering_result)
         )
     end
 
-    @info "- Adding inter-period ramping constraints"
-    inter_period_ramping_data = DBInterface.execute(
-        connection,
-        "SELECT * FROM inter_period_ramping_constraint_view"
-    )
-    @expression(model, power_out_inter_start[g in G, d in D[2:end]], sum(
-        clustering_result.weight_matrix[d, r] * power_out[g, r, 1]
-        for r in R
-    ))
-    @expression(model, power_out_inter_end[g in G, d in D[1:(end-1)]], sum(
-        clustering_result.weight_matrix[d, r] * power_out[g, r, H[end]]
-        for r in R
-    ))
-    for row in rows(inter_period_ramping_data)
-        @constraint(model,
-            power_out_inter_start[row.id, row.period]
-            -
-            power_out_inter_end[row.id, row.period-1]
-            <=
-            row.ramping_rate * timestep_duration * accumulated_capacity[row.id]
-        )
-        @constraint(model,
-            power_out_inter_end[row.id, row.period-1]
-            -
-            power_out_inter_start[row.id, row.period]
-            <=
-            row.ramping_rate * timestep_duration * accumulated_capacity[row.id]
-        )
-    end
+    # @info "- Adding inter-period ramping constraints"
+    # inter_period_ramping_data = DBInterface.execute(
+    #     connection,
+    #     "SELECT * FROM inter_period_ramping_constraint_view"
+    # )
+    # @expression(model, power_out_inter_start[g in G, d in D[2:end]], sum(
+    #     clustering_result.weight_matrix[d, r] * power_out[g, r, 1]
+    #     for r in R
+    # ))
+    # @expression(model, power_out_inter_end[g in G, d in D[1:(end-1)]], sum(
+    #     clustering_result.weight_matrix[d, r] * power_out[g, r, H[end]]
+    #     for r in R
+    # ))
+    # for row in rows(inter_period_ramping_data)
+    #     @constraint(model,
+    #         power_out_inter_start[row.id, row.period]
+    #         -
+    #         power_out_inter_end[row.id, row.period-1]
+    #         <=
+    #         row.ramping_rate * timestep_duration * accumulated_capacity[row.id]
+    #     )
+    #     @constraint(model,
+    #         power_out_inter_end[row.id, row.period-1]
+    #         -
+    #         power_out_inter_start[row.id, row.period]
+    #         <=
+    #         row.ramping_rate * timestep_duration * accumulated_capacity[row.id]
+    #     )
+    # end
 
     @info "- Adding intra-period maximum state of charge constraints"
     intraperiod_storage_capacity_data = DBInterface.execute(
