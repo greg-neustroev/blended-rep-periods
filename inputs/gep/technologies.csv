@@ -1,9 +1,10 @@
 id,type,carrier_out
 ENS,generation,electricity
-Wind_Onshore,generation,electricity
-Wind_Offshore,generation,electricity
-Solar,generation,electricity
-Hydro,generation,electricity
 Coal,generation,electricity
-Nuclear,generation,electricity
 Gas,generation,electricity
+Lignite,generation,electricity
+Nuclear,generation,electricity
+Oil,generation,electricity
+SunPV,generation,electricity
+WindOff,generation,electricity
+WindOn,generation,electricity

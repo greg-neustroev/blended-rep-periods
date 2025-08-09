@@ -30,3 +30,8 @@ JuliaLocalPreferences.toml
 # Other files that should not be committed
 .DS_Store
 .vscode
+.Rproj.user
+.Rproj
+
+outputs
+plots
