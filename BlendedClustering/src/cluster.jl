@@ -526,6 +526,7 @@ function find_representative_periods(
       matrix = [zeros(size(clustering_matrix, 1), 1) clustering_matrix]
       hull_indices = greedy_convex_hull(matrix; n_points=n_rp + 1, distance, initial_indices=[1])
       popfirst!(hull_indices)
+      hull_indices .-= 1
     end
 
     rp_matrix = clustering_matrix[:, hull_indices]
