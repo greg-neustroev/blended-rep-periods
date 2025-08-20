@@ -142,6 +142,7 @@ struct ExperimentResult
     clustering_type::Symbol
     distance::SemiMetric
     weight_type::Symbol
+    projection_error::Float64
     termination_status::String
     objective_value::Union{Float64,Missing}
     evaluation_termination_status::String
@@ -159,6 +160,7 @@ struct ExperimentResult
         seed::Int,
         solved_model::JuMP.AbstractModel,
         eval_model::Union{JuMP.AbstractModel,Nothing},
+        projection_error::Float64,
         time_to_preprocess::Float64,
         time_to_cluster::Float64,
         time_to_fit_weights::Float64,
@@ -205,6 +207,7 @@ struct ExperimentResult
             clustering_type,
             distance,
             weight_type,
+            projection_error,
             termination_status,
             objective_value,
             evaluation_termination_status,
@@ -228,6 +231,7 @@ Tables.columns(res::ExperimentResult) = (;
     clustering_type=[string(res.clustering_type)],
     distance=[semimetric_to_string(res.distance)],
     weight_type=[string(res.weight_type)],
+    projection_error=[res.projection_error],
     termination_status=[res.termination_status],
     objective_value=[res.objective_value],
     evaluation_termination_status=[res.evaluation_termination_status],

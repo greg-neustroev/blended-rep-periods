@@ -14,7 +14,7 @@ using Random
 n_random_seeds = 5
 Random.seed!(123)
 seeds = rand(1:1000, n_random_seeds)
-inputs = ["gep", "tyndp2024"]
+inputs = ["gep",]
 inputs_dir = joinpath(dirname(@__FILE__), "inputs")
 outputs_dir = joinpath(dirname(@__FILE__), "outputs")
 if !isdir(outputs_dir)
@@ -27,11 +27,10 @@ for input in inputs
 
     @info "Reading data shared across all experiments"
     connection = DBInterface.connect(DuckDB.DB, ":memory:")
-    time_to_read = @elapsed read_data_from_dir(connection, joinpath(inputs_dir, input))
-
     output_file = joinpath(outputs_dir, "$(input).csv")
 
     for seed in seeds
+        time_to_read = @elapsed read_data_from_dir(connection, joinpath(inputs_dir, input))
         for run_data_row in run_data |> eachrow
             experiment_data = ExperimentData(run_data_row, input)
             model = Gurobi.Optimizer |> Model

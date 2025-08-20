@@ -26,6 +26,10 @@ function run_experiment(
     @info "Performing $(string(clustering_type)) clustering"
     time_to_cluster = @elapsed clustering_result = cluster_using_experiment_data(experiment_data, connection)
 
+    projection_errors = clustering_result.rp_matrix * clustering_result.weight_matrix' - clustering_result.clustering_matrix
+    initial_projection_error = norm(projection_errors)
+    @info "Initial norm of the projection error: $initial_projection_error"
+
     @info "Fitting $(string(weight_type)) weights"
     # Fit the weights 
     time_to_fit_weights = @elapsed fit_rep_period_weights!(
@@ -34,6 +38,10 @@ function run_experiment(
         learning_rate=experiment_data.learning_rate,
         niters=experiment_data.niters,
     )
+
+    projection_errors = clustering_result.rp_matrix * clustering_result.weight_matrix' - clustering_result.clustering_matrix
+    final_projection_error = norm(projection_errors)
+    @info "Norm of the projection error after fitting: $final_projection_error"
 
     # Register the representative period profiles in DuckDB
     # so that the views use the correct data
@@ -68,6 +76,7 @@ function run_experiment(
         seed,
         model,
         evaluation_type == :none ? nothing : eval_model,
+        final_projection_error,
         time_to_preprocess,
         time_to_cluster,
         time_to_fit_weights,

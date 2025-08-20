@@ -9,7 +9,7 @@ Condat's accelerated implementation (2017). See Figure 2 of
 575–585 (2016).](https://doi.org/10.1007/s10107-015-0946-6). For the details on
 the meanings of v, ṽ, ρ and other variables, see the original paper.
 """
-function project_onto_simplex(vector::Vector{Float64})
+function project_onto_simplex(vector::AbstractVector{Float64})
   # There is a trivial solution when it's a one-element vector
   if length(vector) == 1
     return [1.0]
@@ -65,7 +65,7 @@ end
 Projects `vector` onto the nonnegative_orthant. This projection is trivial:
 replace negative components of the vector with zeros.
 """
-function project_onto_nonnegative_orthant(vector::Vector{Float64})
+function project_onto_nonnegative_orthant(vector::AbstractVector{Float64})
   return max.(vector, 0.0)
 end
 
@@ -94,7 +94,7 @@ The arguments:
       (https://dl.acm.org/doi/10.5555/1953048.2021068)
 """
 function projected_subgradient_descent!(
-  x::Vector{Float64};
+  x::AbstractVector{Float64};
   subgradient::Function,
   projection::Function,
   niters::Int=1000,
@@ -113,9 +113,9 @@ function projected_subgradient_descent!(
   for _ ∈ 1:niters
     g = subgradient(x)  # find the subgradient
 
-    if all(abs.(g) .≤ tol)
-      break
-    end
+    # if all(abs.(g) .≤ tol)
+    #   break
+    # end
 
     if adaptive_grad    # find the learning rate
       G += g .^ 2
@@ -195,25 +195,40 @@ function fit_rep_period_weights!(
 
   is_sparse = issparse(weight_matrix)
 
-  initial_weight_matrix = weight_matrix' |> Matrix{Float64}
+  default_weight_matrix = weight_matrix' |> Matrix{Float64}
   if weight_type ≡ :conical_bounded
     # A zero column needs to be added to the initial weight matrix
-    initial_weight_matrix = vcat(zeros(1, size(initial_weight_matrix, 2)), initial_weight_matrix)
+    default_weight_matrix = vcat(zeros(1, size(default_weight_matrix, 2)), default_weight_matrix)
   end
-  total_projection_error = 0.0
+  for col in eachcol(default_weight_matrix)
+    col .= projection(col)
+  end
+  moore_penrose_weight_matrix = rp_matrix \ clustering_matrix
+  for col in eachcol(moore_penrose_weight_matrix)
+    col .= projection(col)
+  end
+  # check which is the better initial guess and use it
+  default_weight_projection_error = sum((rp_matrix * default_weight_matrix - clustering_matrix) .^ 2)
+  moore_penrose_projection_error = sum((rp_matrix * moore_penrose_weight_matrix - clustering_matrix) .^ 2)
+  initial_weight_matrix = default_weight_projection_error <= moore_penrose_projection_error ?
+                          default_weight_matrix :
+                          moore_penrose_weight_matrix
+
   for period ∈ 1:n_periods
     target_vector = clustering_matrix[:, period]
     x = projection(initial_weight_matrix[:, period])
     subgradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
-    initial_projection_eror = sum((rp_matrix * x - target_vector) .^ 2)
+    initial_projection_eror = norm(rp_matrix * x - target_vector)
+    if initial_projection_eror ≤ tol
+      continue
+    end
     x = projected_subgradient_descent!(x; subgradient, projection, tol=tol * 0.01, args...)
-    fitted_projection_error = sum((rp_matrix * x - target_vector) .^ 2)
+    fitted_projection_error = norm(rp_matrix * x - target_vector)
     if fitted_projection_error > initial_projection_eror
       @warn "Projection error after fitting is larger than before fitting. Using the initial guess instead."
+      @info "Initial projection error: $initial_projection_eror"
+      @info "Fitted projection error: $fitted_projection_error"
       x = initial_weight_matrix[:, period]
-      total_projection_error += initial_projection_eror
-    else
-      total_projection_error += fitted_projection_error
     end
     x[x.<tol] .= 0.0  # replace insignificant small values with zeros
     if weight_type ≡ :convex || weight_type ≡ :conical_bounded
@@ -234,7 +249,6 @@ function fit_rep_period_weights!(
     end
     weight_matrix[period, 1:length(x)] = x
   end
-  @info "Total projection error: $total_projection_error"
   return weight_matrix
 end
 
