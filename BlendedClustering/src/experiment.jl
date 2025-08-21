@@ -67,6 +67,10 @@ function run_experiment(
         # to get the true objective value.
         @info styled"{bold:Evaluating the model}"
         evaluate_solution!(connection, model, eval_model, period_length, evaluation_type)
+    else
+        JuMP.compute_conflict!(model)
+        iis_model, _ = JuMP.copy_conflict(model)
+        print(iis_model)
     end
 
     # Return the results

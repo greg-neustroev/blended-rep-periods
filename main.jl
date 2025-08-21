@@ -14,7 +14,7 @@ using Random
 n_random_seeds = 5
 Random.seed!(123)
 seeds = rand(1:1000, n_random_seeds)
-inputs = ["gep",]
+inputs = ["gep", "tyndp2024",]
 inputs_dir = joinpath(dirname(@__FILE__), "inputs")
 outputs_dir = joinpath(dirname(@__FILE__), "outputs")
 if !isdir(outputs_dir)
