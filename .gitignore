@@ -33,5 +33,6 @@ JuliaLocalPreferences.toml
 .Rproj.user
 .Rproj
 
-outputs
+outputs/gep_*
+outputs/tyndp2024_*
 plots
