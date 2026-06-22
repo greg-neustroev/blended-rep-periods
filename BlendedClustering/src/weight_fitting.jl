@@ -209,7 +209,10 @@ function fit_rep_period_weights!(
   for col in eachcol(default_weight_matrix)
     col .= projection(col)
   end
-  moore_penrose_weight_matrix = rp_matrix \ clustering_matrix
+  # Moore-Penrose pseudoinverse (R†): the least-squares initial guess. Using
+  # `pinv` rather than `\` stays well-defined when `rp_matrix` is rank-deficient
+  # (e.g. the zero-augmented column in the sub-unit conic case).
+  moore_penrose_weight_matrix = pinv(rp_matrix) * clustering_matrix
   for col in eachcol(moore_penrose_weight_matrix)
     col .= projection(col)
   end

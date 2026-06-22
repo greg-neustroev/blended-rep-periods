@@ -104,6 +104,17 @@ end
     @test all(sum(W, dims=2) .<= 1 + 1e-6)
   end
 
+  @testset "sub-unit conic fitting is robust when features == RPs + 1" begin
+    # Here rp_matrix is square and, once a zero column is appended for the
+    # null-point trick, singular; the pseudoinverse initial guess keeps fitting
+    # well-defined where `rp_matrix \\ clustering_matrix` would throw.
+    df = synthetic_clustering_df(n_timesteps=2, assets=["a", "b"], seed=7)  # 4 features
+    res = find_representative_periods(df, 3; method=:k_means)               # 4x3 RP matrix
+    W = Matrix(fit_rep_period_weights!(res; weight_type=:conical_bounded, niters=500))
+    @test all(W .>= -1e-8)
+    @test all(sum(W, dims=2) .<= 1 + 1e-6)
+  end
+
   @testset "experiment config schema has no distance or learning_rate" begin
     mktempdir() do dir
       path = joinpath(dir, "run.csv")
