@@ -1,4 +1,4 @@
-export fit_rep_period_weights!, projected_subgradient_descent!, project_onto_simplex
+export fit_rep_period_weights!, projected_gradient_descent!, project_onto_simplex
 
 """
   project_onto_simplex(vector)
@@ -70,15 +70,15 @@ function project_onto_nonnegative_orthant(vector::AbstractVector{Float64})
 end
 
 """
-  projected_subgradient_descent!(x; gradient, projection, niters, rtol, learning_rate)
+  projected_gradient_descent!(x; gradient, projection, niters, rtol, learning_rate)
 
 Fits `x` using the projected gradient descent scheme.
 
 The arguments:
 
   - `x`: the value to fit
-  - `subgradient`: the subgradient operator, that is, a function that takes
-    vectors of the same shape as `x` as inputs and returns a subgradient of the
+  - `gradient`: the gradient operator, that is, a function that takes
+    vectors of the same shape as `x` as inputs and returns a gradient of the
     loss at that point; the fitting is done to minimize the corresponding
     implicit loss
   - `projection`: the projection operator, that is, a function that, given a
@@ -88,9 +88,9 @@ The arguments:
     algorithm stops
   - `learning_rate`: learning rate of the algorithm
 """
-function projected_subgradient_descent!(
+function projected_gradient_descent!(
   x::AbstractVector{Float64};
-  subgradient::Function,
+  gradient::Function,
   projection::Function,
   niters::Int=1000,
   tol::Float64=1e-5,
@@ -101,7 +101,7 @@ function projected_subgradient_descent!(
   x = projection(x)
 
   for _ ∈ 1:niters
-    g = subgradient(x)  # find the gradient
+    g = gradient(x)  # find the gradient
     α = learning_rate
     y = x .- α .* g            # gradient step, may leave the domain
     x_new = projection(y)      # projection step, return to the domain
@@ -126,7 +126,7 @@ bound the total weight by one.
 The arguments:
 
   - `weight_matrix`: the initial guess for weights; the weights are adjusted
-    using a projected subgradient descent method
+    using a projected gradient descent method
   - `clustering_matrix`: the matrix of raw clustering data
   - `rp_matrix`: the matrix of raw representative period data
   - `weight_type`: the type of weights to find; possible values are:
@@ -139,8 +139,8 @@ The arguments:
         weight bounded from above by one.
   - `tol`: algorithm's tolerance; when the weights are adjusted by a value less
     then or equal to `tol`, they stop being fitted further.
-  - other arguments control the projected subgradient method; they are passed
-    through to `projected_subgradient_descent!`.
+  - other arguments control the projected gradient method; they are passed
+    through to `projected_gradient_descent!`.
 """
 function fit_rep_period_weights!(
   weight_matrix::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}},
@@ -201,12 +201,12 @@ function fit_rep_period_weights!(
   for period ∈ 1:n_periods
     target_vector = clustering_matrix[:, period]
     x = projection(initial_weight_matrix[:, period])
-    subgradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
+    gradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
     initial_projection_eror = norm(rp_matrix * x - target_vector)
     if initial_projection_eror ≤ tol
       continue
     end
-    x = projected_subgradient_descent!(x; subgradient, projection, tol=tol * 0.01, learning_rate=step_size, args...)
+    x = projected_gradient_descent!(x; gradient, projection, tol=tol * 0.01, learning_rate=step_size, args...)
     fitted_projection_error = norm(rp_matrix * x - target_vector)
     if fitted_projection_error > initial_projection_eror
       @warn "Projection error after fitting is larger than before fitting. Using the initial guess instead."
@@ -257,8 +257,8 @@ The arguments:
         weight bounded from above by one.
   - `tol`: algorithm's tolerance; when the weights are adjusted by a value less
     then or equal to `tol`, they stop being fitted further.
-  - other arguments control the projected subgradient method; they are passed
-    through to `projected_subgradient_descent!`.
+  - other arguments control the projected gradient method; they are passed
+    through to `projected_gradient_descent!`.
 """
 function fit_rep_period_weights!(
   clustering_result::ClusteringResult;

@@ -418,9 +418,9 @@ function greedy_convex_hull(
         # Cached projection is still exact for the enlarged hull (Lemma 1).
         d = cached[2]
       else
-        subgradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
+        gradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
         x = projection_matrix * target_vector
-        x = projected_subgradient_descent!(x; subgradient, projection=project_onto_simplex, learning_rate=step_size)
+        x = projected_gradient_descent!(x; gradient, projection=project_onto_simplex, learning_rate=step_size)
         projected_target = hull_matrix * x
         d = norm(projected_target - target_vector)
         projection_cache[column_index] = (projected_target, d)
