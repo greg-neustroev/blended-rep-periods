@@ -8,6 +8,22 @@ Condat's accelerated implementation (2017). See Figure 2 of
 [Condat, L. _Fast projection onto the simplex and the  ball._ Math. Program. 158,
 575–585 (2016).](https://doi.org/10.1007/s10107-015-0946-6). For the details on
 the meanings of v, ṽ, ρ and other variables, see the original paper.
+
+# Examples
+
+```
+julia> project_onto_simplex([0.5, 0.5, 0.5])
+3-element Vector{Float64}:
+ 0.33333333333333337
+ 0.33333333333333337
+ 0.33333333333333337
+
+julia> project_onto_simplex([2.0, 0.0, 0.0])
+3-element Vector{Float64}:
+ 1.0
+ 0.0
+ 0.0
+```
 """
 function project_onto_simplex(vector::AbstractVector{Float64})
   # There is a trivial solution when it's a one-element vector
@@ -64,6 +80,16 @@ end
 
 Projects `vector` onto the nonnegative_orthant. This projection is trivial:
 replace negative components of the vector with zeros.
+
+# Examples
+
+```
+julia> project_onto_nonnegative_orthant([-1.0, 2.0, -3.0])
+3-element Vector{Float64}:
+ 0.0
+ 2.0
+ 0.0
+```
 """
 function project_onto_nonnegative_orthant(vector::AbstractVector{Float64})
   return max.(vector, 0.0)

@@ -371,6 +371,35 @@ function append_period_from_source_df_as_rp!(
   append!(df, period_df)
 end
 
+"""
+    greedy_convex_hull(matrix; n_points, initial_indices=nothing, mean_vector=nothing, cache=true)
+
+Greedily selects `n_points` columns of `matrix` whose convex hull approximates the
+data. Starting from the column furthest from the column mean (or from
+`initial_indices`, if given), each step adds the column whose Euclidean distance
+to the current hull is largest, where that distance is the residual of the
+projection onto the hull (Algorithm 1). Returns the selected column indices.
+
+All distances are Euclidean. When `cache` is `true`, a column's projection
+distance is reused across iterations whenever the obtuse-angle certificate
+guarantees the cached projection is still exact (Lemma 1); `cache=false`
+recomputes every projection and yields identical results.
+
+# Examples
+
+```
+julia> M = [0.0 1.0 0.0 0.3; 0.0 0.0 1.0 0.3]  # three hull vertices and one interior point
+2×4 Matrix{Float64}:
+ 0.0  1.0  0.0  0.3
+ 0.0  0.0  1.0  0.3
+
+julia> greedy_convex_hull(M; n_points=3)  # interior point (column 4) is never selected
+3-element Vector{Int64}:
+ 2
+ 3
+ 1
+```
+"""
 function greedy_convex_hull(
   matrix::AbstractMatrix{Float64};
   n_points::Int,
