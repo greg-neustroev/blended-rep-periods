@@ -126,7 +126,7 @@ function projected_subgradient_descent!(
     y = x .- α .* g            # gradent step, may leave the domain
     x_new = projection(y)      # projection step, return to the domain
 
-    diff = maximum(x_new - x)  # how much did the vector change
+    diff = maximum(abs.(x_new .- x))  # ‖x_prev − x‖_∞: how much the vector moved
     if diff ≤ tol / niters
       break
     end
