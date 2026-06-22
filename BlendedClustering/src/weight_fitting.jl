@@ -214,6 +214,10 @@ function fit_rep_period_weights!(
                           default_weight_matrix :
                           moore_penrose_weight_matrix
 
+  # Principled PGD step size: 1 / L with L = σ_max(rp_matrix)^2, the Lipschitz
+  # constant of the projection objective's gradient (Proposition 2).
+  step_size = 1 / opnorm(rp_matrix, 2)^2
+
   for period ∈ 1:n_periods
     target_vector = clustering_matrix[:, period]
     x = projection(initial_weight_matrix[:, period])
@@ -222,7 +226,7 @@ function fit_rep_period_weights!(
     if initial_projection_eror ≤ tol
       continue
     end
-    x = projected_subgradient_descent!(x; subgradient, projection, tol=tol * 0.01, args...)
+    x = projected_subgradient_descent!(x; subgradient, projection, tol=tol * 0.01, learning_rate=step_size, args...)
     fitted_projection_error = norm(rp_matrix * x - target_vector)
     if fitted_projection_error > initial_projection_eror
       @warn "Projection error after fitting is larger than before fitting. Using the initial guess instead."

@@ -395,6 +395,9 @@ function greedy_convex_hull(
     furthest_vector_index = nothing
     hull_matrix = matrix[:, hull_indices]
     projection_matrix = pinv(hull_matrix)
+    # Principled PGD step size: 1 / L with L = σ_max(hull_matrix)^2, the
+    # Lipschitz constant of the projection objective's gradient (Proposition 2).
+    step_size = 1 / opnorm(hull_matrix, 2)^2
     for column_index ∈ axes(matrix, 2)
       if column_index ∈ hull_indices
         continue
@@ -407,7 +410,7 @@ function greedy_convex_hull(
       else
         subgradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
         x = projection_matrix * target_vector
-        x = projected_subgradient_descent!(x; subgradient, projection=project_onto_simplex)
+        x = projected_subgradient_descent!(x; subgradient, projection=project_onto_simplex, learning_rate=step_size)
         projected_target = hull_matrix * x
         d = norm(projected_target - target_vector)
         distances_cache[column_index] = d
