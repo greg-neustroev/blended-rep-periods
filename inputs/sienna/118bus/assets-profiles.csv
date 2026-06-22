@@ -1,0 +1,254 @@
+asset,profile_type,profile
+Hydro 01,inflows,Hydro 01_inflow
+Hydro 02,inflows,Hydro 02_inflow
+Hydro 03,inflows,Hydro 03_inflow
+Hydro 04,inflows,Hydro 04_inflow
+Hydro 05,inflows,Hydro 05_inflow
+Hydro 06,inflows,Hydro 06_inflow
+Hydro 07,inflows,Hydro 07_inflow
+Hydro 08,inflows,Hydro 08_inflow
+Hydro 09,inflows,Hydro 09_inflow
+Hydro 10,inflows,Hydro 10_inflow
+Hydro 11,inflows,Hydro 11_inflow
+Hydro 12,inflows,Hydro 12_inflow
+Hydro 13,inflows,Hydro 13_inflow
+Hydro 14,inflows,Hydro 14_inflow
+Hydro 15,inflows,Hydro 15_inflow
+Hydro 16,availability,Hydro 16
+Hydro 17,availability,Hydro 17
+Hydro 18,availability,Hydro 18
+Hydro 19,availability,Hydro 19
+Hydro 20,availability,Hydro 20
+Hydro 21,availability,Hydro 21
+Hydro 22,availability,Hydro 22
+Hydro 23,availability,Hydro 23
+Hydro 24,availability,Hydro 24
+Hydro 25,availability,Hydro 25
+Hydro 26,availability,Hydro 26
+Hydro 27,availability,Hydro 27
+Hydro 28,availability,Hydro 28
+Hydro 29,availability,Hydro 29
+Hydro 30,availability,Hydro 30
+Hydro 31,availability,Hydro 31
+Hydro 32,availability,Hydro 32
+Hydro 33,availability,Hydro 33
+Hydro 34,availability,Hydro 34
+Hydro 35,availability,Hydro 35
+Hydro 36,availability,Hydro 36
+Hydro 37,availability,Hydro 37
+Hydro 38,availability,Hydro 38
+Hydro 39,availability,Hydro 39
+Hydro 40,availability,Hydro 40
+Hydro 41,availability,Hydro 41
+Hydro 42,availability,Hydro 42
+Hydro 43,availability,Hydro 43
+Solar 01,availability,Solar 01
+Solar 02,availability,Solar 02
+Solar 03,availability,Solar 03
+Solar 04,availability,Solar 04
+Solar 05,availability,Solar 05
+Solar 06,availability,Solar 06
+Solar 07,availability,Solar 07
+Solar 08,availability,Solar 08
+Solar 09,availability,Solar 09
+Solar 10,availability,Solar 10
+Solar 11,availability,Solar 11
+Solar 12,availability,Solar 12
+Solar 13,availability,Solar 13
+Solar 14,availability,Solar 14
+Solar 15,availability,Solar 15
+Solar 16,availability,Solar 16
+Solar 17,availability,Solar 17
+Solar 18,availability,Solar 18
+Solar 19,availability,Solar 19
+Solar 20,availability,Solar 20
+Solar 21,availability,Solar 21
+Solar 22,availability,Solar 22
+Solar 23,availability,Solar 23
+Solar 24,availability,Solar 24
+Solar 25,availability,Solar 25
+Solar 26,availability,Solar 26
+Solar 27,availability,Solar 27
+Solar 28,availability,Solar 28
+Solar 29,availability,Solar 29
+Solar 30,availability,Solar 30
+Solar 31,availability,Solar 31
+Solar 32,availability,Solar 32
+Solar 33,availability,Solar 33
+Solar 34,availability,Solar 34
+Solar 35,availability,Solar 35
+Solar 36,availability,Solar 36
+Solar 37,availability,Solar 37
+Solar 38,availability,Solar 38
+Solar 39,availability,Solar 39
+Solar 40,availability,Solar 40
+Solar 41,availability,Solar 41
+Solar 42,availability,Solar 42
+Solar 43,availability,Solar 43
+Solar 44,availability,Solar 44
+Solar 45,availability,Solar 45
+Solar 46,availability,Solar 46
+Solar 47,availability,Solar 47
+Solar 48,availability,Solar 48
+Solar 49,availability,Solar 49
+Solar 50,availability,Solar 50
+Solar 51,availability,Solar 51
+Solar 52,availability,Solar 52
+Solar 53,availability,Solar 53
+Solar 54,availability,Solar 54
+Solar 55,availability,Solar 55
+Solar 56,availability,Solar 56
+Solar 57,availability,Solar 57
+Solar 58,availability,Solar 58
+Solar 59,availability,Solar 59
+Solar 60,availability,Solar 60
+Solar 61,availability,Solar 61
+Solar 62,availability,Solar 62
+Solar 63,availability,Solar 63
+Solar 64,availability,Solar 64
+Solar 65,availability,Solar 65
+Solar 66,availability,Solar 66
+Solar 67,availability,Solar 67
+Solar 68,availability,Solar 68
+Solar 69,availability,Solar 69
+Solar 70,availability,Solar 70
+Solar 71,availability,Solar 71
+Solar 72,availability,Solar 72
+Solar 73,availability,Solar 73
+Solar 74,availability,Solar 74
+Solar 75,availability,Solar 75
+Wind 01,availability,Wind 01
+Wind 02,availability,Wind 02
+Wind 03,availability,Wind 03
+Wind 04,availability,Wind 04
+Wind 05,availability,Wind 05
+Wind 06,availability,Wind 06
+Wind 07,availability,Wind 07
+Wind 08,availability,Wind 08
+Wind 09,availability,Wind 09
+Wind 10,availability,Wind 10
+Wind 11,availability,Wind 11
+Wind 12,availability,Wind 12
+Wind 13,availability,Wind 13
+Wind 14,availability,Wind 14
+Wind 15,availability,Wind 15
+Wind 16,availability,Wind 16
+Wind 17,availability,Wind 17
+bus070_Demand,demand,bus070_Demand
+bus031_Demand,demand,bus031_Demand
+bus048_Demand,demand,bus048_Demand
+bus055_Demand,demand,bus055_Demand
+bus004_Demand,demand,bus004_Demand
+bus104_Demand,demand,bus104_Demand
+bus043_Demand,demand,bus043_Demand
+bus074_Demand,demand,bus074_Demand
+bus017_Demand,demand,bus017_Demand
+bus076_Demand,demand,bus076_Demand
+bus040_Demand,demand,bus040_Demand
+bus064_Demand,demand,bus064_Demand
+bus114_Demand,demand,bus114_Demand
+bus032_Demand,demand,bus032_Demand
+bus054_Demand,demand,bus054_Demand
+bus021_Demand,demand,bus021_Demand
+bus116_Demand,demand,bus116_Demand
+bus091_Demand,demand,bus091_Demand
+bus096_Demand,demand,bus096_Demand
+bus037_Demand,demand,bus037_Demand
+bus016_Demand,demand,bus016_Demand
+bus112_Demand,demand,bus112_Demand
+bus012_Demand,demand,bus012_Demand
+bus022_Demand,demand,bus022_Demand
+bus045_Demand,demand,bus045_Demand
+bus067_Demand,demand,bus067_Demand
+bus009_Demand,demand,bus009_Demand
+bus058_Demand,demand,bus058_Demand
+bus003_Demand,demand,bus003_Demand
+bus051_Demand,demand,bus051_Demand
+bus056_Demand,demand,bus056_Demand
+bus099_Demand,demand,bus099_Demand
+bus100_Demand,demand,bus100_Demand
+bus105_Demand,demand,bus105_Demand
+bus109_Demand,demand,bus109_Demand
+bus110_Demand,demand,bus110_Demand
+bus019_Demand,demand,bus019_Demand
+bus039_Demand,demand,bus039_Demand
+bus084_Demand,demand,bus084_Demand
+bus081_Demand,demand,bus081_Demand
+bus036_Demand,demand,bus036_Demand
+bus089_Demand,demand,bus089_Demand
+bus063_Demand,demand,bus063_Demand
+bus098_Demand,demand,bus098_Demand
+bus046_Demand,demand,bus046_Demand
+bus006_Demand,demand,bus006_Demand
+bus052_Demand,demand,bus052_Demand
+bus065_Demand,demand,bus065_Demand
+bus010_Demand,demand,bus010_Demand
+bus028_Demand,demand,bus028_Demand
+bus073_Demand,demand,bus073_Demand
+bus034_Demand,demand,bus034_Demand
+bus115_Demand,demand,bus115_Demand
+bus068_Demand,demand,bus068_Demand
+bus020_Demand,demand,bus020_Demand
+bus044_Demand,demand,bus044_Demand
+bus072_Demand,demand,bus072_Demand
+bus086_Demand,demand,bus086_Demand
+bus033_Demand,demand,bus033_Demand
+bus079_Demand,demand,bus079_Demand
+bus062_Demand,demand,bus062_Demand
+bus087_Demand,demand,bus087_Demand
+bus001_Demand,demand,bus001_Demand
+bus029_Demand,demand,bus029_Demand
+bus101_Demand,demand,bus101_Demand
+bus102_Demand,demand,bus102_Demand
+bus090_Demand,demand,bus090_Demand
+bus053_Demand,demand,bus053_Demand
+bus013_Demand,demand,bus013_Demand
+bus083_Demand,demand,bus083_Demand
+bus097_Demand,demand,bus097_Demand
+bus041_Demand,demand,bus041_Demand
+bus005_Demand,demand,bus005_Demand
+bus078_Demand,demand,bus078_Demand
+bus093_Demand,demand,bus093_Demand
+bus038_Demand,demand,bus038_Demand
+bus002_Demand,demand,bus002_Demand
+bus103_Demand,demand,bus103_Demand
+bus049_Demand,demand,bus049_Demand
+bus082_Demand,demand,bus082_Demand
+bus094_Demand,demand,bus094_Demand
+bus117_Demand,demand,bus117_Demand
+bus018_Demand,demand,bus018_Demand
+bus023_Demand,demand,bus023_Demand
+bus080_Demand,demand,bus080_Demand
+bus092_Demand,demand,bus092_Demand
+bus015_Demand,demand,bus015_Demand
+bus057_Demand,demand,bus057_Demand
+bus011_Demand,demand,bus011_Demand
+bus108_Demand,demand,bus108_Demand
+bus085_Demand,demand,bus085_Demand
+bus008_Demand,demand,bus008_Demand
+bus075_Demand,demand,bus075_Demand
+bus077_Demand,demand,bus077_Demand
+bus042_Demand,demand,bus042_Demand
+bus024_Demand,demand,bus024_Demand
+bus025_Demand,demand,bus025_Demand
+bus030_Demand,demand,bus030_Demand
+bus088_Demand,demand,bus088_Demand
+bus106_Demand,demand,bus106_Demand
+bus014_Demand,demand,bus014_Demand
+bus047_Demand,demand,bus047_Demand
+bus095_Demand,demand,bus095_Demand
+bus111_Demand,demand,bus111_Demand
+bus061_Demand,demand,bus061_Demand
+bus118_Demand,demand,bus118_Demand
+bus066_Demand,demand,bus066_Demand
+bus069_Demand,demand,bus069_Demand
+bus113_Demand,demand,bus113_Demand
+bus027_Demand,demand,bus027_Demand
+bus071_Demand,demand,bus071_Demand
+bus035_Demand,demand,bus035_Demand
+bus060_Demand,demand,bus060_Demand
+bus007_Demand,demand,bus007_Demand
+bus026_Demand,demand,bus026_Demand
+bus107_Demand,demand,bus107_Demand
+bus050_Demand,demand,bus050_Demand
+bus059_Demand,demand,bus059_Demand
