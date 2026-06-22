@@ -12,10 +12,8 @@ struct RunData <: AbstractDataFrame
             "n_rep_periods",
             "period_length",
             "clustering_type",
-            "distance",
             "weight_type",
             "niters",
-            "learning_rate",
             "evaluation_type",
         ] |> Set
         df_columns = df |> names |> Set
@@ -24,36 +22,7 @@ struct RunData <: AbstractDataFrame
         end
         symbol_columns = [:clustering_type, :weight_type, :evaluation_type]
         transform!(df, symbol_columns .=> ByRow(Symbol) .=> symbol_columns)
-        transform!(df, :distance => ByRow(string_to_semimetric) => :distance)
         return df
-    end
-end
-
-function string_to_semimetric(s::AbstractString)
-    if s == "euclidean"
-        return Euclidean()
-    elseif s == "cityblock" || s == "manhattan"
-        return Cityblock()
-    elseif s == "cosine"
-        return CosineDist()
-    elseif s == "chebyshev"
-        return Chebyshev()
-    else
-        error("Unknown distance metric: $s")
-    end
-end
-
-function semimetric_to_string(distance::SemiMetric)
-    if distance isa Euclidean
-        return "euclidean"
-    elseif distance isa Cityblock
-        return "cityblock"
-    elseif distance isa CosineDist
-        return "cosine"
-    elseif distance isa Chebyshev
-        return "chebyshev"
-    else
-        return string(distance)
     end
 end
 
@@ -68,10 +37,8 @@ struct ExperimentData
     n_rep_periods::Int
     period_length::Int
     clustering_type::Symbol
-    distance::SemiMetric
     weight_type::Symbol
     niters::Int
-    learning_rate::Float64
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -80,10 +47,8 @@ struct ExperimentData
                 run_data_row.n_rep_periods,
                 run_data_row.period_length,
                 string(run_data_row.clustering_type),
-                semimetric_to_string(run_data_row.distance),
                 string(run_data_row.weight_type),
                 run_data_row.niters,
-                run_data_row.learning_rate,
             ],
             "_"
         )
@@ -92,10 +57,8 @@ struct ExperimentData
             run_data_row.n_rep_periods,
             run_data_row.period_length,
             run_data_row.clustering_type,
-            run_data_row.distance,
             run_data_row.weight_type,
             run_data_row.niters,
-            run_data_row.learning_rate,
             run_data_row.evaluation_type
         )
     end
@@ -140,7 +103,6 @@ struct ExperimentResult
     n_rep_periods::Int
     period_length::Int
     clustering_type::Symbol
-    distance::SemiMetric
     weight_type::Symbol
     projection_error::Float64
     termination_status::String
@@ -171,7 +133,6 @@ struct ExperimentResult
         n_rep_periods = data.n_rep_periods
         period_length = data.period_length
         clustering_type = data.clustering_type
-        distance = data.distance
         weight_type = data.weight_type
         termination_status = solved_model |> JuMP.termination_status |> string
         objective_value = if JuMP.is_solved_and_feasible(solved_model)
@@ -205,7 +166,6 @@ struct ExperimentResult
             n_rep_periods,
             period_length,
             clustering_type,
-            distance,
             weight_type,
             projection_error,
             termination_status,
@@ -229,7 +189,6 @@ Tables.columns(res::ExperimentResult) = (;
     n_rep_periods=[res.n_rep_periods],
     period_length=[res.period_length],
     clustering_type=[string(res.clustering_type)],
-    distance=[semimetric_to_string(res.distance)],
     weight_type=[string(res.weight_type)],
     projection_error=[res.projection_error],
     termination_status=[res.termination_status],

@@ -1,4 +1,4 @@
-export fit_rep_period_weights!, projected_subgradient_descent!, project_onto_simplex
+export fit_rep_period_weights!, projected_gradient_descent!, project_onto_simplex
 
 """
   project_onto_simplex(vector)
@@ -8,6 +8,22 @@ Condat's accelerated implementation (2017). See Figure 2 of
 [Condat, L. _Fast projection onto the simplex and the  ball._ Math. Program. 158,
 575–585 (2016).](https://doi.org/10.1007/s10107-015-0946-6). For the details on
 the meanings of v, ṽ, ρ and other variables, see the original paper.
+
+# Examples
+
+```
+julia> project_onto_simplex([0.5, 0.5, 0.5])
+3-element Vector{Float64}:
+ 0.33333333333333337
+ 0.33333333333333337
+ 0.33333333333333337
+
+julia> project_onto_simplex([2.0, 0.0, 0.0])
+3-element Vector{Float64}:
+ 1.0
+ 0.0
+ 0.0
+```
 """
 function project_onto_simplex(vector::AbstractVector{Float64})
   # There is a trivial solution when it's a one-element vector
@@ -64,21 +80,31 @@ end
 
 Projects `vector` onto the nonnegative_orthant. This projection is trivial:
 replace negative components of the vector with zeros.
+
+# Examples
+
+```
+julia> project_onto_nonnegative_orthant([-1.0, 2.0, -3.0])
+3-element Vector{Float64}:
+ 0.0
+ 2.0
+ 0.0
+```
 """
 function project_onto_nonnegative_orthant(vector::AbstractVector{Float64})
   return max.(vector, 0.0)
 end
 
 """
-  projected_subgradient_descent!(x; gradient, projection, niters, rtol, learning_rate, adaptive_grad)
+  projected_gradient_descent!(x; gradient, projection, niters, rtol, learning_rate)
 
 Fits `x` using the projected gradient descent scheme.
 
 The arguments:
 
   - `x`: the value to fit
-  - `subgradient`: the subgradient operator, that is, a function that takes
-    vectors of the same shape as `x` as inputs and returns a subgradient of the
+  - `gradient`: the gradient operator, that is, a function that takes
+    vectors of the same shape as `x` as inputs and returns a gradient of the
     loss at that point; the fitting is done to minimize the corresponding
     implicit loss
   - `projection`: the projection operator, that is, a function that, given a
@@ -87,46 +113,26 @@ The arguments:
   - `tol`: tolerance; when no components of `x` improve by more than `tol`, the
     algorithm stops
   - `learning_rate`: learning rate of the algorithm
-  - `adaptive_grad`: if true, the learning rate is adjusted using the adaptive
-    gradient method, see [John Duchi, Elad Hazan, and Yoram Singer. 2011.
-    _Adaptive Subgradient Methods for Online Learning and Stochastic
-      Optimization._ J. Mach. Learn. Res. 12, null (2/1/2011), 2121–2159.]
-      (https://dl.acm.org/doi/10.5555/1953048.2021068)
 """
-function projected_subgradient_descent!(
+function projected_gradient_descent!(
   x::AbstractVector{Float64};
-  subgradient::Function,
+  gradient::Function,
   projection::Function,
   niters::Int=1000,
   tol::Float64=1e-5,
   learning_rate::Float64=1e-3,
-  adaptive_grad=false,
 )
   # It is possible that the initial guess is not in the required subspace;
   # project it first.
   x = projection(x)
 
-  if adaptive_grad
-    G = zeros(length(x))
-  end
-
   for _ ∈ 1:niters
-    g = subgradient(x)  # find the subgradient
-
-    # if all(abs.(g) .≤ tol)
-    #   break
-    # end
-
-    if adaptive_grad    # find the learning rate
-      G += g .^ 2
-      α = learning_rate ./ (1e-6 .+ .√(G))
-    else
-      α = learning_rate
-    end
-    y = x .- α .* g            # gradent step, may leave the domain
+    g = gradient(x)  # find the gradient
+    α = learning_rate
+    y = x .- α .* g            # gradient step, may leave the domain
     x_new = projection(y)      # projection step, return to the domain
 
-    diff = maximum(x_new - x)  # how much did the vector change
+    diff = maximum(abs.(x_new .- x))  # ‖x_prev − x‖_∞: how much the vector moved
     if diff ≤ tol / niters
       break
     end
@@ -146,7 +152,7 @@ bound the total weight by one.
 The arguments:
 
   - `weight_matrix`: the initial guess for weights; the weights are adjusted
-    using a projected subgradient descent method
+    using a projected gradient descent method
   - `clustering_matrix`: the matrix of raw clustering data
   - `rp_matrix`: the matrix of raw representative period data
   - `weight_type`: the type of weights to find; possible values are:
@@ -159,8 +165,8 @@ The arguments:
         weight bounded from above by one.
   - `tol`: algorithm's tolerance; when the weights are adjusted by a value less
     then or equal to `tol`, they stop being fitted further.
-  - other arguments control the projected subgradient method; they are passed
-    through to `projected_subgradient_descent!`.
+  - other arguments control the projected gradient method; they are passed
+    through to `projected_gradient_descent!`.
 """
 function fit_rep_period_weights!(
   weight_matrix::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}},
@@ -203,7 +209,10 @@ function fit_rep_period_weights!(
   for col in eachcol(default_weight_matrix)
     col .= projection(col)
   end
-  moore_penrose_weight_matrix = rp_matrix \ clustering_matrix
+  # Moore-Penrose pseudoinverse (R†): the least-squares initial guess. Using
+  # `pinv` rather than `\` stays well-defined when `rp_matrix` is rank-deficient
+  # (e.g. the zero-augmented column in the sub-unit conic case).
+  moore_penrose_weight_matrix = pinv(rp_matrix) * clustering_matrix
   for col in eachcol(moore_penrose_weight_matrix)
     col .= projection(col)
   end
@@ -214,15 +223,19 @@ function fit_rep_period_weights!(
                           default_weight_matrix :
                           moore_penrose_weight_matrix
 
+  # Principled PGD step size: 1 / L with L = σ_max(rp_matrix)^2, the Lipschitz
+  # constant of the projection objective's gradient (Proposition 2).
+  step_size = 1 / opnorm(rp_matrix, 2)^2
+
   for period ∈ 1:n_periods
     target_vector = clustering_matrix[:, period]
     x = projection(initial_weight_matrix[:, period])
-    subgradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
+    gradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
     initial_projection_eror = norm(rp_matrix * x - target_vector)
     if initial_projection_eror ≤ tol
       continue
     end
-    x = projected_subgradient_descent!(x; subgradient, projection, tol=tol * 0.01, args...)
+    x = projected_gradient_descent!(x; gradient, projection, tol=tol * 0.01, learning_rate=step_size, args...)
     fitted_projection_error = norm(rp_matrix * x - target_vector)
     if fitted_projection_error > initial_projection_eror
       @warn "Projection error after fitting is larger than before fitting. Using the initial guess instead."
@@ -273,8 +286,8 @@ The arguments:
         weight bounded from above by one.
   - `tol`: algorithm's tolerance; when the weights are adjusted by a value less
     then or equal to `tol`, they stop being fitted further.
-  - other arguments control the projected subgradient method; they are passed
-    through to `projected_subgradient_descent!`.
+  - other arguments control the projected gradient method; they are passed
+    through to `projected_gradient_descent!`.
 """
 function fit_rep_period_weights!(
   clustering_result::ClusteringResult;
