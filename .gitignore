@@ -36,3 +36,4 @@ JuliaLocalPreferences.toml
 outputs/gep_*
 outputs/tyndp2024_*
 plots
+aux_data
