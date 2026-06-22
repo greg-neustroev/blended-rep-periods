@@ -35,7 +35,6 @@ function run_experiment(
     time_to_fit_weights = @elapsed fit_rep_period_weights!(
         clustering_result;
         weight_type=experiment_data.weight_type,
-        learning_rate=experiment_data.learning_rate,
         niters=experiment_data.niters,
     )
 

@@ -14,7 +14,6 @@ struct RunData <: AbstractDataFrame
             "clustering_type",
             "weight_type",
             "niters",
-            "learning_rate",
             "evaluation_type",
         ] |> Set
         df_columns = df |> names |> Set
@@ -40,7 +39,6 @@ struct ExperimentData
     clustering_type::Symbol
     weight_type::Symbol
     niters::Int
-    learning_rate::Float64
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -51,7 +49,6 @@ struct ExperimentData
                 string(run_data_row.clustering_type),
                 string(run_data_row.weight_type),
                 run_data_row.niters,
-                run_data_row.learning_rate,
             ],
             "_"
         )
@@ -62,7 +59,6 @@ struct ExperimentData
             run_data_row.clustering_type,
             run_data_row.weight_type,
             run_data_row.niters,
-            run_data_row.learning_rate,
             run_data_row.evaluation_type
         )
     end
