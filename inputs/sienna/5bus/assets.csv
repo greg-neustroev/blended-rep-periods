@@ -1,0 +1,16 @@
+id,location,technology,unit_capacity,initial_units
+Solitude,3,Solitude,35.0,1
+Park City,1,Park City,11.0,1
+Alta,1,Alta,2.6,1
+Brighton,10,Brighton,40.0,1
+Sundance,4,Sundance,200.0,1
+HydroDispatch2,4,HydroDispatch2,50.0,1
+HydroDispatch1,1,HydroDispatch1,5.0,1
+HydroDispatch3,10,HydroDispatch3,75.0,1
+SolarBusC,3,SolarBusC,45.3,1
+WindBusA,1,WindBusA,148.3,1
+ENS_1,1,ENS,0.0,1
+ENS_4,4,ENS,28.571,1
+ENS_10,10,ENS,0.0,1
+ENS_2,2,ENS,21.429,1
+ENS_3,3,ENS,21.429,1

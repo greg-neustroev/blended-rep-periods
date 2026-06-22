@@ -1,0 +1,9 @@
+asset,profile_type,profile
+HydroDispatch2,availability,HydroDispatch2
+HydroDispatch1,inflows,HydroDispatch1_inflow
+HydroDispatch3,inflows,HydroDispatch3_inflow
+SolarBusC,availability,SolarBusC
+WindBusA,availability,WindBusA
+4_Demand,demand,4_Demand
+2_Demand,demand,2_Demand
+3_Demand,demand,3_Demand
