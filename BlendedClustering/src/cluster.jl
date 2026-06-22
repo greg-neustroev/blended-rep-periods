@@ -375,7 +375,8 @@ function greedy_convex_hull(
   matrix::AbstractMatrix{Float64};
   n_points::Int,
   initial_indices::Union{Vector{Int},Nothing}=nothing,
-  mean_vector::Union{Vector{Float64},Nothing}=nothing
+  mean_vector::Union{Vector{Float64},Nothing}=nothing,
+  cache::Bool=true
 )
   if initial_indices ≡ nothing
     if mean_vector ≡ nothing
@@ -388,7 +389,12 @@ function greedy_convex_hull(
     return initial_indices[1:n_points]
   end
   hull_indices = initial_indices
-  distances_cache = Dict{Int,Float64}()
+  # Cache maps a candidate index d to (q_d, δ_d): its Euclidean projection onto
+  # the current hull and the associated distance. After a new representative
+  # c_new is added, the cached projection q_d stays exact for the enlarged hull
+  # iff the obtuse-angle certificate (c_d − q_d)ᵀ(c_new − q_d) ≤ 0 holds
+  # (Lemma 1); otherwise it is recomputed.
+  projection_cache = Dict{Int,Tuple{Vector{Float64},Float64}}()
   starting_index = length(initial_indices) + 1
   for _ ∈ starting_index:n_points
     max_distance = -Inf
@@ -398,22 +404,26 @@ function greedy_convex_hull(
     # Principled PGD step size: 1 / L with L = σ_max(hull_matrix)^2, the
     # Lipschitz constant of the projection objective's gradient (Proposition 2).
     step_size = 1 / opnorm(hull_matrix, 2)^2
+    last_added_vector = matrix[:, last(hull_indices)]
+    # Soundness (Lemma 1) requires re-testing EVERY candidate against the newest
+    # representative on EVERY outer iteration; do not skip candidates here.
     for column_index ∈ axes(matrix, 2)
       if column_index ∈ hull_indices
         continue
       end
-      last_added_vector = matrix[:, last(hull_indices)]
       target_vector = matrix[:, column_index]
-      cached_distance = get(distances_cache, column_index, Inf)
-      if norm(target_vector - last_added_vector) ≥ cached_distance
-        d = cached_distance
+      cached = get(projection_cache, column_index, nothing)
+      if cache && cached !== nothing &&
+         dot(target_vector - cached[1], last_added_vector - cached[1]) ≤ 0
+        # Cached projection is still exact for the enlarged hull (Lemma 1).
+        d = cached[2]
       else
         subgradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
         x = projection_matrix * target_vector
         x = projected_subgradient_descent!(x; subgradient, projection=project_onto_simplex, learning_rate=step_size)
         projected_target = hull_matrix * x
         d = norm(projected_target - target_vector)
-        distances_cache[column_index] = d
+        projection_cache[column_index] = (projected_target, d)
       end
       if d > max_distance
         max_distance = d
