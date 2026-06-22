@@ -374,7 +374,6 @@ end
 function greedy_convex_hull(
   matrix::AbstractMatrix{Float64};
   n_points::Int,
-  distance::SemiMetric,
   initial_indices::Union{Vector{Int},Nothing}=nothing,
   mean_vector::Union{Vector{Float64},Nothing}=nothing
 )
@@ -382,7 +381,7 @@ function greedy_convex_hull(
     if mean_vector ≡ nothing
       mean_vector = vec(mean(matrix, dims=2))
     end
-    distances_from_mean = [distance(mean_vector, matrix[:, j]) for j ∈ axes(matrix, 2)]
+    distances_from_mean = [norm(mean_vector - matrix[:, j]) for j ∈ axes(matrix, 2)]
     initial_indices = [argmax(distances_from_mean)]
   end
   if length(initial_indices) ≥ n_points
@@ -403,14 +402,14 @@ function greedy_convex_hull(
       last_added_vector = matrix[:, last(hull_indices)]
       target_vector = matrix[:, column_index]
       cached_distance = get(distances_cache, column_index, Inf)
-      if distance(target_vector, last_added_vector) ≥ cached_distance
+      if norm(target_vector - last_added_vector) ≥ cached_distance
         d = cached_distance
       else
         subgradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
         x = projection_matrix * target_vector
         x = projected_subgradient_descent!(x; subgradient, projection=project_onto_simplex)
         projected_target = hull_matrix * x
-        d = distance(projected_target, target_vector)
+        d = norm(projected_target - target_vector)
         distances_cache[column_index] = d
       end
       if d > max_distance
@@ -430,27 +429,21 @@ end
   find_representative_periods(
     clustering_data;
     n_rp = 10,
-    rescale_demand_data = true,
     drop_incomplete_last_period = false,
     method = :k_means,
-    distance = SqEuclidean(),
     args...,
   )
 
-Finds representative periods via data clustering.
+Finds representative periods via data clustering. All distances are Euclidean.
 
   - `clustering_data`: the data to perform clustering on.
   - `n_rp`: number of representative periods to find.
-  - `rescale_demand_data`: if `true`, demands are first divided by the maximum
-    demand value, so that they are between zero and one like the generation
-    availability data
   - `drop_incomplete_last_period`: controls how the last period is treated if it
     is not complete: if this parameter is set to `true`, the incomplete period
     is dropped and the weights are rescaled accordingly; otherwise, clustering
     is done for `n_rp - 1` periods, and the last period is added as a special
     shorter representative period
   - `method`: clustering method to use, either `:k_means` and `:k_medoids`
-  - `distance`: semimetric used to measure distance  between data points.
   - other named arguments can be provided; they are passed to the clustering method.
 """
 function find_representative_periods(
@@ -458,7 +451,6 @@ function find_representative_periods(
   n_rp::Int;
   drop_incomplete_last_period::Bool=false,
   method::Symbol=:k_means,
-  distance::SemiMetric=Euclidean(),
   args...,
 )
 
@@ -499,7 +491,7 @@ function find_representative_periods(
   # 4. Do the clustering, now that the data is transformed into a matrix
   if method ≡ :k_means
     # Do the clustering
-    kmeans_result = kmeans(clustering_matrix, n_rp; distance, args...)
+    kmeans_result = kmeans(clustering_matrix, n_rp; distance=Euclidean(), args...)
 
     # Reinterpret the results
     rp_matrix = kmeans_result.centers
@@ -507,39 +499,36 @@ function find_representative_periods(
   elseif method ≡ :k_medoids
     # Do the clustering
     # k-medoids uses distance matrix instead of clustering matrix
-    distance_matrix = pairwise(distance, clustering_matrix; dims=2)
+    distance_matrix = pairwise(Euclidean(), clustering_matrix; dims=2)
     kmedoids_result = kmedoids(distance_matrix, n_rp; args...)
 
     # Reinterpret the results
     rp_matrix = clustering_matrix[:, kmedoids_result.medoids]
     assignments = kmedoids_result.assignments
   elseif method ≡ :convex_hull
-    hull_indices = greedy_convex_hull(clustering_matrix; n_points=n_rp, distance)
+    hull_indices = greedy_convex_hull(clustering_matrix; n_points=n_rp)
 
     rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [argmin([distance(clustering_matrix[:, h], clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
   elseif method ≡ :convex_hull_with_null
-    is_distance_to_zero_undefined = isnan(distance(zeros(size(clustering_matrix, 1), 1), clustering_matrix[:, 1]))
-    if is_distance_to_zero_undefined
-      hull_indices = greedy_convex_hull(clustering_matrix; n_points=n_rp, distance)
-    else
-      matrix = [zeros(size(clustering_matrix, 1), 1) clustering_matrix]
-      hull_indices = greedy_convex_hull(matrix; n_points=n_rp + 1, distance, initial_indices=[1])
-      popfirst!(hull_indices)
-      hull_indices .-= 1
-    end
+    # Add a null vector as a column, run the convex-hull method initialized at
+    # it, then drop it; the remaining positive weights sum to at most one.
+    matrix = [zeros(size(clustering_matrix, 1), 1) clustering_matrix]
+    hull_indices = greedy_convex_hull(matrix; n_points=n_rp + 1, initial_indices=[1])
+    popfirst!(hull_indices)
+    hull_indices .-= 1
 
     rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [argmin([distance(clustering_matrix[:, h], clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
   elseif method ≡ :conical_hull
     normal_vector = vec(mean(clustering_matrix, dims=2))
     normalize!(normal_vector)
     projection_coefficients = [1.0 / dot(normal_vector, clustering_matrix[:, j]) for j ∈ axes(clustering_matrix, 2)]
     projected_matrix = [clustering_matrix[i, j] * projection_coefficients[j] for i ∈ axes(clustering_matrix, 1), j ∈ axes(clustering_matrix, 2)]
-    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, distance=Euclidean(), mean_vector=normal_vector)
+    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector)
 
     rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [argmin([distance(clustering_matrix[:, h], clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
   else
     throw(ArgumentError("Clustering method is not supported"))
   end
@@ -575,7 +564,6 @@ function cluster_using_experiment_data(experiment_data, connection)
   n_rep_periods = experiment_data.n_rep_periods
   clustering_type = experiment_data.clustering_type
   weight_type = experiment_data.weight_type
-  distance = experiment_data.distance
 
   # Collect the clustering data into a data frame
   clustering_df = DBInterface.execute(
@@ -592,7 +580,6 @@ function cluster_using_experiment_data(experiment_data, connection)
     clustering_df,
     n_rep_periods;
     method=clustering_method,
-    distance=distance,
     init=:kmcen
   )
 end
