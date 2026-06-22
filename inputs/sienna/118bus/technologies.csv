@@ -1,0 +1,329 @@
+id,type,carrier_out
+Biomass 01,generation,electricity
+Biomass 02,generation,electricity
+Biomass 03,generation,electricity
+Biomass 04,generation,electricity
+Biomass 05,generation,electricity
+Biomass 06,generation,electricity
+Biomass 07,generation,electricity
+Biomass 08,generation,electricity
+Biomass 09,generation,electricity
+Biomass 10,generation,electricity
+Biomass 11,generation,electricity
+Biomass 12,generation,electricity
+Biomass 13,generation,electricity
+Biomass 14,generation,electricity
+Biomass 15,generation,electricity
+Biomass 16,generation,electricity
+Biomass 17,generation,electricity
+Biomass 18,generation,electricity
+Biomass 19,generation,electricity
+Biomass 20,generation,electricity
+Biomass 21,generation,electricity
+Biomass 22,generation,electricity
+Biomass 23,generation,electricity
+Biomass 24,generation,electricity
+Biomass 25,generation,electricity
+Biomass 26,generation,electricity
+Biomass 27,generation,electricity
+Biomass 28,generation,electricity
+Biomass 29,generation,electricity
+Biomass 30,generation,electricity
+Biomass 31,generation,electricity
+Biomass 32,generation,electricity
+Biomass 33,generation,electricity
+Biomass 34,generation,electricity
+Biomass 35,generation,electricity
+Biomass 36,generation,electricity
+Biomass 37,generation,electricity
+Biomass 38,generation,electricity
+Biomass 39,generation,electricity
+Biomass 40,generation,electricity
+Biomass 41,generation,electricity
+Biomass 42,generation,electricity
+Biomass 43,generation,electricity
+Biomass 44,generation,electricity
+Biomass 45,generation,electricity
+Biomass 46,generation,electricity
+Biomass 47,generation,electricity
+Biomass 48,generation,electricity
+Biomass 49,generation,electricity
+Biomass 50,generation,electricity
+Biomass 51,generation,electricity
+Biomass 52,generation,electricity
+Biomass 53,generation,electricity
+Biomass 54,generation,electricity
+Biomass 55,generation,electricity
+Biomass 56,generation,electricity
+Biomass 57,generation,electricity
+Biomass 58,generation,electricity
+Biomass 59,generation,electricity
+Biomass 60,generation,electricity
+Biomass 61,generation,electricity
+Biomass 62,generation,electricity
+CC NG 01,generation,electricity
+CC NG 03,generation,electricity
+CC NG 04,generation,electricity
+CC NG 05,generation,electricity
+CC NG 06,generation,electricity
+CC NG 07,generation,electricity
+CC NG 08,generation,electricity
+CC NG 09,generation,electricity
+CC NG 10,generation,electricity
+CC NG 11,generation,electricity
+CC NG 12,generation,electricity
+CC NG 13,generation,electricity
+CC NG 14,generation,electricity
+CC NG 15,generation,electricity
+CC NG 16,generation,electricity
+CC NG 17,generation,electricity
+CC NG 18,generation,electricity
+CC NG 19,generation,electricity
+CC NG 20,generation,electricity
+CC NG 21,generation,electricity
+CC NG 22,generation,electricity
+CC NG 23,generation,electricity
+CC NG 24,generation,electricity
+CC NG 25,generation,electricity
+CC NG 26,generation,electricity
+CC NG 27,generation,electricity
+CC NG 28,generation,electricity
+CC NG 29,generation,electricity
+CC NG 31,generation,electricity
+CC NG 32,generation,electricity
+CC NG 33,generation,electricity
+CC NG 34,generation,electricity
+CC NG 35,generation,electricity
+CC NG 36,generation,electricity
+CC NG 37,generation,electricity
+CC NG 38,generation,electricity
+CC NG 39,generation,electricity
+CC NG 40,generation,electricity
+CT NG 01,generation,electricity
+CT NG 02,generation,electricity
+CT NG 03,generation,electricity
+CT NG 04,generation,electricity
+CT NG 05,generation,electricity
+CT NG 06,generation,electricity
+CT NG 07,generation,electricity
+CT NG 08,generation,electricity
+CT NG 09,generation,electricity
+CT NG 10,generation,electricity
+CT NG 11,generation,electricity
+CT NG 12,generation,electricity
+CT NG 13,generation,electricity
+CT NG 14,generation,electricity
+CT NG 15,generation,electricity
+CT NG 16,generation,electricity
+CT NG 17,generation,electricity
+CT NG 18,generation,electricity
+CT NG 19,generation,electricity
+CT NG 20,generation,electricity
+CT NG 21,generation,electricity
+CT NG 22,generation,electricity
+CT NG 23,generation,electricity
+CT NG 24,generation,electricity
+CT NG 25,generation,electricity
+CT NG 26,generation,electricity
+CT NG 27,generation,electricity
+CT NG 28,generation,electricity
+CT NG 29,generation,electricity
+CT NG 30,generation,electricity
+CT NG 31,generation,electricity
+CT NG 32,generation,electricity
+CT NG 33,generation,electricity
+CT NG 34,generation,electricity
+CT NG 35,generation,electricity
+CT NG 36,generation,electricity
+CT NG 37,generation,electricity
+CT NG 38,generation,electricity
+CT NG 39,generation,electricity
+CT NG 40,generation,electricity
+CT NG 41,generation,electricity
+CT NG 42,generation,electricity
+CT NG 43,generation,electricity
+CT NG 44,generation,electricity
+CT NG 45,generation,electricity
+CT NG 46,generation,electricity
+CT NG 47,generation,electricity
+CT NG 48,generation,electricity
+CT NG 49,generation,electricity
+CT NG 50,generation,electricity
+CT NG 51,generation,electricity
+CT NG 52,generation,electricity
+CT NG 53,generation,electricity
+CT NG 54,generation,electricity
+CT NG 55,generation,electricity
+CT NG 56,generation,electricity
+CT NG 66,generation,electricity
+CT NG 67,generation,electricity
+CT NG 68,generation,electricity
+CT NG 69,generation,electricity
+CT NG 70,generation,electricity
+CT NG 71,generation,electricity
+CT NG 72,generation,electricity
+CT NG 73,generation,electricity
+CT NG 74,generation,electricity
+CT NG 75,generation,electricity
+CT Oil 01,generation,electricity
+CT Oil 02,generation,electricity
+CT Oil 03,generation,electricity
+CT Oil 04,generation,electricity
+CT Oil 05,generation,electricity
+Geo 01,generation,electricity
+Hydro 01,storage,electricity
+Hydro 02,storage,electricity
+Hydro 03,storage,electricity
+Hydro 04,storage,electricity
+Hydro 05,storage,electricity
+Hydro 06,storage,electricity
+Hydro 07,storage,electricity
+Hydro 08,storage,electricity
+Hydro 09,storage,electricity
+Hydro 10,storage,electricity
+Hydro 11,storage,electricity
+Hydro 12,storage,electricity
+Hydro 13,storage,electricity
+Hydro 14,storage,electricity
+Hydro 15,storage,electricity
+Hydro 16,generation,electricity
+Hydro 17,generation,electricity
+Hydro 18,generation,electricity
+Hydro 19,generation,electricity
+Hydro 20,generation,electricity
+Hydro 21,generation,electricity
+Hydro 22,generation,electricity
+Hydro 23,generation,electricity
+Hydro 24,generation,electricity
+Hydro 25,generation,electricity
+Hydro 26,generation,electricity
+Hydro 27,generation,electricity
+Hydro 28,generation,electricity
+Hydro 29,generation,electricity
+Hydro 30,generation,electricity
+Hydro 31,generation,electricity
+Hydro 32,generation,electricity
+Hydro 33,generation,electricity
+Hydro 34,generation,electricity
+Hydro 35,generation,electricity
+Hydro 36,generation,electricity
+Hydro 37,generation,electricity
+Hydro 38,generation,electricity
+Hydro 39,generation,electricity
+Hydro 40,generation,electricity
+Hydro 41,generation,electricity
+Hydro 42,generation,electricity
+Hydro 43,generation,electricity
+ICE NG 01,generation,electricity
+ICE NG 02,generation,electricity
+ICE NG 03,generation,electricity
+ICE NG 04,generation,electricity
+ICE NG 05,generation,electricity
+ICE NG 06,generation,electricity
+ICE NG 07,generation,electricity
+Solar 01,generation,electricity
+Solar 02,generation,electricity
+Solar 03,generation,electricity
+Solar 04,generation,electricity
+Solar 05,generation,electricity
+Solar 06,generation,electricity
+Solar 07,generation,electricity
+Solar 08,generation,electricity
+Solar 09,generation,electricity
+Solar 10,generation,electricity
+Solar 11,generation,electricity
+Solar 12,generation,electricity
+Solar 13,generation,electricity
+Solar 14,generation,electricity
+Solar 15,generation,electricity
+Solar 16,generation,electricity
+Solar 17,generation,electricity
+Solar 18,generation,electricity
+Solar 19,generation,electricity
+Solar 20,generation,electricity
+Solar 21,generation,electricity
+Solar 22,generation,electricity
+Solar 23,generation,electricity
+Solar 24,generation,electricity
+Solar 25,generation,electricity
+Solar 26,generation,electricity
+Solar 27,generation,electricity
+Solar 28,generation,electricity
+Solar 29,generation,electricity
+Solar 30,generation,electricity
+Solar 31,generation,electricity
+Solar 32,generation,electricity
+Solar 33,generation,electricity
+Solar 34,generation,electricity
+Solar 35,generation,electricity
+Solar 36,generation,electricity
+Solar 37,generation,electricity
+Solar 38,generation,electricity
+Solar 39,generation,electricity
+Solar 40,generation,electricity
+Solar 41,generation,electricity
+Solar 42,generation,electricity
+Solar 43,generation,electricity
+Solar 44,generation,electricity
+Solar 45,generation,electricity
+Solar 46,generation,electricity
+Solar 47,generation,electricity
+Solar 48,generation,electricity
+Solar 49,generation,electricity
+Solar 50,generation,electricity
+Solar 51,generation,electricity
+Solar 52,generation,electricity
+Solar 53,generation,electricity
+Solar 54,generation,electricity
+Solar 55,generation,electricity
+Solar 56,generation,electricity
+Solar 57,generation,electricity
+Solar 58,generation,electricity
+Solar 59,generation,electricity
+Solar 60,generation,electricity
+Solar 61,generation,electricity
+Solar 62,generation,electricity
+Solar 63,generation,electricity
+Solar 64,generation,electricity
+Solar 65,generation,electricity
+Solar 66,generation,electricity
+Solar 67,generation,electricity
+Solar 68,generation,electricity
+Solar 69,generation,electricity
+Solar 70,generation,electricity
+Solar 71,generation,electricity
+Solar 72,generation,electricity
+Solar 73,generation,electricity
+Solar 74,generation,electricity
+Solar 75,generation,electricity
+ST Coal 01,generation,electricity
+ST NG 01,generation,electricity
+ST NG 02,generation,electricity
+ST NG 03,generation,electricity
+ST NG 04,generation,electricity
+ST NG 05,generation,electricity
+ST NG 06,generation,electricity
+ST NG 07,generation,electricity
+ST NG 08,generation,electricity
+ST NG 09,generation,electricity
+ST NG 10,generation,electricity
+ST Other 01,generation,electricity
+ST Other 02,generation,electricity
+Wind 01,generation,electricity
+Wind 02,generation,electricity
+Wind 03,generation,electricity
+Wind 04,generation,electricity
+Wind 05,generation,electricity
+Wind 06,generation,electricity
+Wind 07,generation,electricity
+Wind 08,generation,electricity
+Wind 09,generation,electricity
+Wind 10,generation,electricity
+Wind 11,generation,electricity
+Wind 12,generation,electricity
+Wind 13,generation,electricity
+Wind 14,generation,electricity
+Wind 15,generation,electricity
+Wind 16,generation,electricity
+Wind 17,generation,electricity
+ENS,generation,electricity

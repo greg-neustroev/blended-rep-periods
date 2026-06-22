@@ -1,0 +1,10 @@
+id,type,carrier_out
+ENS,generation,electricity
+Coal,generation,electricity
+Gas,generation,electricity
+Lignite,generation,electricity
+Nuclear,generation,electricity
+Oil,generation,electricity
+SunPV,generation,electricity
+WindOff,generation,electricity
+WindOn,generation,electricity

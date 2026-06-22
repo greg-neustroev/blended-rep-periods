@@ -1,0 +1,446 @@
+id,location,technology,unit_capacity,initial_units
+Biomass 01,bus012,Biomass 01,3.0,1
+Biomass 02,bus012,Biomass 02,3.0,1
+Biomass 03,bus103,Biomass 03,1.2,1
+Biomass 04,bus103,Biomass 04,1.2,1
+Biomass 05,bus012,Biomass 05,1.3,1
+Biomass 06,bus012,Biomass 06,1.3,1
+Biomass 07,bus012,Biomass 07,3.0,1
+Biomass 08,bus012,Biomass 08,1.35,1
+Biomass 09,bus012,Biomass 09,1.35,1
+Biomass 10,bus012,Biomass 10,1.35,1
+Biomass 11,bus012,Biomass 11,0.71,1
+Biomass 12,bus012,Biomass 12,0.71,1
+Biomass 13,bus012,Biomass 13,0.71,1
+Biomass 14,bus012,Biomass 14,1.57,1
+Biomass 15,bus012,Biomass 15,0.65,1
+Biomass 16,bus012,Biomass 16,0.65,1
+Biomass 17,bus012,Biomass 17,0.65,1
+Biomass 18,bus012,Biomass 18,0.65,1
+Biomass 19,bus012,Biomass 19,0.45,1
+Biomass 20,bus012,Biomass 20,0.45,1
+Biomass 21,bus012,Biomass 21,0.45,1
+Biomass 22,bus012,Biomass 22,0.45,1
+Biomass 23,bus012,Biomass 23,1.0,1
+Biomass 24,bus012,Biomass 24,1.0,1
+Biomass 25,bus012,Biomass 25,1.0,1
+Biomass 26,bus012,Biomass 26,1.9,1
+Biomass 27,bus012,Biomass 27,1.9,1
+Biomass 28,bus012,Biomass 28,1.9,1
+Biomass 29,bus012,Biomass 29,1.9,1
+Biomass 30,bus012,Biomass 30,1.9,1
+Biomass 31,bus012,Biomass 31,1.9,1
+Biomass 32,bus012,Biomass 32,1.9,1
+Biomass 33,bus103,Biomass 33,1.6,1
+Biomass 34,bus103,Biomass 34,1.6,1
+Biomass 35,bus103,Biomass 35,1.6,1
+Biomass 36,bus103,Biomass 36,1.6,1
+Biomass 37,bus103,Biomass 37,0.95,1
+Biomass 38,bus103,Biomass 38,0.95,1
+Biomass 39,bus103,Biomass 39,0.95,1
+Biomass 40,bus103,Biomass 40,0.95,1
+Biomass 41,bus103,Biomass 41,1.88,1
+Biomass 42,bus103,Biomass 42,1.88,1
+Biomass 43,bus103,Biomass 43,3.75,1
+Biomass 44,bus103,Biomass 44,2.29,1
+Biomass 45,bus103,Biomass 45,2.29,1
+Biomass 46,bus103,Biomass 46,1.2,1
+Biomass 47,bus103,Biomass 47,3.0,1
+Biomass 48,bus103,Biomass 48,3.0,1
+Biomass 49,bus103,Biomass 49,1.6,1
+Biomass 50,bus103,Biomass 50,0.9,1
+Biomass 51,bus103,Biomass 51,0.9,1
+Biomass 52,bus103,Biomass 52,3.0,1
+Biomass 53,bus034,Biomass 53,3.0,1
+Biomass 54,bus034,Biomass 54,3.0,1
+Biomass 55,bus034,Biomass 55,3.0,1
+Biomass 56,bus012,Biomass 56,4.6,1
+Biomass 57,bus012,Biomass 57,3.0,1
+Biomass 58,bus012,Biomass 58,3.0,1
+Biomass 59,bus012,Biomass 59,4.6,1
+Biomass 60,bus012,Biomass 60,3.0,1
+Biomass 61,bus103,Biomass 61,1.88,1
+Biomass 62,bus034,Biomass 62,7.5,1
+CC NG 01,bus012,CC NG 01,41.5,1
+CC NG 03,bus012,CC NG 03,126.98,1
+CC NG 04,bus012,CC NG 04,320.0,1
+CC NG 05,bus074,CC NG 05,100.0,1
+CC NG 06,bus012,CC NG 06,13.5,1
+CC NG 07,bus103,CC NG 07,55.1,1
+CC NG 08,bus112,CC NG 08,14.3,1
+CC NG 09,bus107,CC NG 09,33.0,1
+CC NG 10,bus036,CC NG 10,71.51,1
+CC NG 11,bus066,CC NG 11,596.4,1
+CC NG 12,bus046,CC NG 12,150.0,1
+CC NG 13,bus012,CC NG 13,57.3,1
+CC NG 14,bus049,CC NG 14,164.75,1
+CC NG 15,bus034,CC NG 15,27.0,1
+CC NG 16,bus012,CC NG 16,943.5,1
+CC NG 17,bus025,CC NG 17,154.4,1
+CC NG 18,bus113,CC NG 18,619.0,1
+CC NG 19,bus012,CC NG 19,140.0,1
+CC NG 20,bus025,CC NG 20,25.8,1
+CC NG 21,bus026,CC NG 21,315.0,1
+CC NG 22,bus026,CC NG 22,677.8,1
+CC NG 23,bus010,CC NG 23,636.0,1
+CC NG 24,bus025,CC NG 24,672.3,1
+CC NG 25,bus010,CC NG 25,32.49,1
+CC NG 26,bus010,CC NG 26,655.0,1
+CC NG 27,bus004,CC NG 27,34.5,1
+CC NG 28,bus100,CC NG 28,181.5,1
+CC NG 29,bus107,CC NG 29,49.9,1
+CC NG 31,bus089,CC NG 31,336.5,1
+CC NG 32,bus090,CC NG 32,38.55,1
+CC NG 33,bus090,CC NG 33,24.88,1
+CC NG 34,bus087,CC NG 34,688.3,1
+CC NG 35,bus089,CC NG 35,595.0,1
+CC NG 36,bus087,CC NG 36,668.0,1
+CC NG 37,bus065,CC NG 37,636.0,1
+CC NG 38,bus049,CC NG 38,98.2,1
+CC NG 39,bus018,CC NG 39,247.0,1
+CC NG 40,bus107,CC NG 40,751.1,1
+CT NG 01,bus006,CT NG 01,25.4,1
+CT NG 02,bus018,CT NG 02,25.4,1
+CT NG 03,bus004,CT NG 03,24.75,1
+CT NG 04,bus004,CT NG 04,24.75,1
+CT NG 05,bus004,CT NG 05,49.9,1
+CT NG 06,bus006,CT NG 06,49.9,1
+CT NG 07,bus006,CT NG 07,49.9,1
+CT NG 08,bus008,CT NG 08,50.0,1
+CT NG 09,bus008,CT NG 09,50.0,1
+CT NG 10,bus008,CT NG 10,50.0,1
+CT NG 11,bus010,CT NG 11,50.0,1
+CT NG 12,bus010,CT NG 12,50.0,1
+CT NG 13,bus006,CT NG 13,21.6,1
+CT NG 14,bus006,CT NG 14,21.6,1
+CT NG 15,bus025,CT NG 15,21.6,1
+CT NG 16,bus025,CT NG 16,49.9,1
+CT NG 17,bus004,CT NG 17,6.9,1
+CT NG 18,bus004,CT NG 18,3.9,1
+CT NG 19,bus018,CT NG 19,3.9,1
+CT NG 20,bus025,CT NG 20,6.9,1
+CT NG 21,bus085,CT NG 21,100.0,1
+CT NG 22,bus091,CT NG 22,100.0,1
+CT NG 23,bus091,CT NG 23,100.0,1
+CT NG 24,bus100,CT NG 24,100.0,1
+CT NG 25,bus100,CT NG 25,100.0,1
+CT NG 26,bus100,CT NG 26,100.0,1
+CT NG 27,bus107,CT NG 27,1.05,1
+CT NG 28,bus100,CT NG 28,44.02,1
+CT NG 29,bus107,CT NG 29,0.6,1
+CT NG 30,bus090,CT NG 30,18.0,1
+CT NG 31,bus107,CT NG 31,1.54,1
+CT NG 32,bus107,CT NG 32,1.6,1
+CT NG 33,bus107,CT NG 33,1.3,1
+CT NG 34,bus100,CT NG 34,100.0,1
+CT NG 35,bus100,CT NG 35,100.0,1
+CT NG 36,bus100,CT NG 36,100.0,1
+CT NG 37,bus107,CT NG 37,1.3,1
+CT NG 38,bus090,CT NG 38,9.5,1
+CT NG 39,bus112,CT NG 39,1.3,1
+CT NG 40,bus112,CT NG 40,3.1,1
+CT NG 41,bus040,CT NG 41,54.0,1
+CT NG 42,bus036,CT NG 42,82.4,1
+CT NG 43,bus062,CT NG 43,25.0,1
+CT NG 44,bus055,CT NG 44,60.35,1
+CT NG 45,bus055,CT NG 45,60.35,1
+CT NG 46,bus026,CT NG 46,180.0,1
+CT NG 47,bus026,CT NG 47,180.0,1
+CT NG 48,bus026,CT NG 48,180.0,1
+CT NG 49,bus026,CT NG 49,180.0,1
+CT NG 50,bus111,CT NG 50,49.96,1
+CT NG 51,bus085,CT NG 51,8.57,1
+CT NG 52,bus085,CT NG 52,10.71,1
+CT NG 53,bus085,CT NG 53,10.71,1
+CT NG 54,bus111,CT NG 54,49.9,1
+CT NG 55,bus091,CT NG 55,15.0,1
+CT NG 56,bus111,CT NG 56,46.9,1
+CT NG 66,bus111,CT NG 66,45.0,1
+CT NG 67,bus111,CT NG 67,45.0,1
+CT NG 68,bus111,CT NG 68,46.7,1
+CT NG 69,bus111,CT NG 69,49.5,1
+CT NG 70,bus111,CT NG 70,44.02,1
+CT NG 71,bus111,CT NG 71,44.02,1
+CT NG 72,bus112,CT NG 72,50.0,1
+CT NG 73,bus112,CT NG 73,50.0,1
+CT NG 74,bus042,CT NG 74,42.0,1
+CT NG 75,bus049,CT NG 75,50.4,1
+CT Oil 01,bus026,CT Oil 01,74.5,1
+CT Oil 02,bus010,CT Oil 02,74.5,1
+CT Oil 03,bus010,CT Oil 03,74.5,1
+CT Oil 04,bus054,CT Oil 04,71.2,1
+CT Oil 05,bus054,CT Oil 05,71.2,1
+Geo 01,bus055,Geo 01,22.0,1
+Hydro 01,bus056,Hydro 01,75.0,1
+Hydro 02,bus056,Hydro 02,75.0,1
+Hydro 03,bus066,Hydro 03,77.0,1
+Hydro 04,bus076,Hydro 04,77.0,1
+Hydro 05,bus049,Hydro 05,82.0,1
+Hydro 06,bus059,Hydro 06,1225.31,1
+Hydro 07,bus059,Hydro 07,1225.31,1
+Hydro 08,bus061,Hydro 08,1225.31,1
+Hydro 09,bus061,Hydro 09,1225.31,1
+Hydro 10,bus062,Hydro 10,1225.31,1
+Hydro 11,bus076,Hydro 11,810.77,1
+Hydro 12,bus077,Hydro 12,810.78,1
+Hydro 13,bus059,Hydro 13,46.7,1
+Hydro 14,bus099,Hydro 14,110.0,1
+Hydro 15,bus080,Hydro 15,140.0,1
+Hydro 16,bus032,Hydro 16,0.8,1
+Hydro 17,bus112,Hydro 17,1.35,1
+Hydro 18,bus112,Hydro 18,4.65,1
+Hydro 19,bus116,Hydro 19,648.44,1
+Hydro 20,bus077,Hydro 20,765.77,1
+Hydro 21,bus099,Hydro 21,765.77,1
+Hydro 22,bus099,Hydro 22,765.77,1
+Hydro 23,bus069,Hydro 23,742.63,1
+Hydro 24,bus069,Hydro 24,742.63,1
+Hydro 25,bus061,Hydro 25,286.46,1
+Hydro 26,bus116,Hydro 26,286.46,1
+Hydro 27,bus080,Hydro 27,286.46,1
+Hydro 28,bus080,Hydro 28,1116.06,1
+Hydro 29,bus080,Hydro 29,1116.06,1
+Hydro 30,bus034,Hydro 30,0.1,1
+Hydro 31,bus034,Hydro 31,0.4,1
+Hydro 32,bus034,Hydro 32,0.48,1
+Hydro 33,bus069,Hydro 33,1112.39,1
+Hydro 34,bus069,Hydro 34,1112.39,1
+Hydro 35,bus034,Hydro 35,0.24,1
+Hydro 36,bus034,Hydro 36,10.76,1
+Hydro 37,bus036,Hydro 37,47.1,1
+Hydro 38,bus034,Hydro 38,2.46,1
+Hydro 39,bus034,Hydro 39,2.46,1
+Hydro 40,bus065,Hydro 40,96.93,1
+Hydro 41,bus046,Hydro 41,96.26,1
+Hydro 42,bus042,Hydro 42,96.26,1
+Hydro 43,bus099,Hydro 43,111.93,1
+ICE NG 01,bus112,ICE NG 01,3.25,1
+ICE NG 02,bus056,ICE NG 02,8.4,1
+ICE NG 03,bus065,ICE NG 03,8.4,1
+ICE NG 04,bus065,ICE NG 04,8.4,1
+ICE NG 05,bus077,ICE NG 05,8.4,1
+ICE NG 06,bus077,ICE NG 06,8.4,1
+ICE NG 07,bus034,ICE NG 07,8.4,1
+Solar 01,bus032,Solar 01,746.76,1
+Solar 02,bus092,Solar 02,369.26,1
+Solar 03,bus054,Solar 03,264.47,1
+Solar 04,bus032,Solar 04,4.85,1
+Solar 05,bus018,Solar 05,0.12,1
+Solar 06,bus018,Solar 06,6.33,1
+Solar 07,bus018,Solar 07,0.21,1
+Solar 08,bus018,Solar 08,2.51,1
+Solar 09,bus018,Solar 09,12.85,1
+Solar 10,bus015,Solar 10,9.71,1
+Solar 11,bus015,Solar 11,1.98,1
+Solar 12,bus015,Solar 12,1.54,1
+Solar 13,bus015,Solar 13,0.26,1
+Solar 14,bus015,Solar 14,11.71,1
+Solar 15,bus015,Solar 15,10.53,1
+Solar 16,bus015,Solar 16,6.6,1
+Solar 17,bus015,Solar 17,3.01,1
+Solar 18,bus015,Solar 18,12.35,1
+Solar 19,bus015,Solar 19,0.1,1
+Solar 20,bus015,Solar 20,10.08,1
+Solar 21,bus015,Solar 21,18.42,1
+Solar 22,bus015,Solar 22,8.98,1
+Solar 23,bus015,Solar 23,0.29,1
+Solar 24,bus015,Solar 24,1.45,1
+Solar 25,bus015,Solar 25,1.94,1
+Solar 26,bus015,Solar 26,1.8,1
+Solar 27,bus015,Solar 27,1.13,1
+Solar 28,bus015,Solar 28,8.03,1
+Solar 29,bus015,Solar 29,8.63,1
+Solar 30,bus015,Solar 30,4.5,1
+Solar 31,bus104,Solar 31,116.03,1
+Solar 32,bus104,Solar 32,173.97,1
+Solar 33,bus104,Solar 33,132.0,1
+Solar 34,bus110,Solar 34,125.0,1
+Solar 35,bus104,Solar 35,45.0,1
+Solar 36,bus110,Solar 36,128.9,1
+Solar 37,bus112,Solar 37,26.0,1
+Solar 38,bus112,Solar 38,20.0,1
+Solar 39,bus112,Solar 39,1.75,1
+Solar 40,bus112,Solar 40,1.75,1
+Solar 41,bus112,Solar 41,1.75,1
+Solar 42,bus112,Solar 42,1.75,1
+Solar 43,bus112,Solar 43,1.75,1
+Solar 44,bus112,Solar 44,1.75,1
+Solar 45,bus112,Solar 45,1.75,1
+Solar 46,bus112,Solar 46,1.75,1
+Solar 47,bus112,Solar 47,1.75,1
+Solar 48,bus112,Solar 48,1.75,1
+Solar 49,bus112,Solar 49,1.1,1
+Solar 50,bus112,Solar 50,4.69,1
+Solar 51,bus112,Solar 51,15.65,1
+Solar 52,bus112,Solar 52,10.64,1
+Solar 53,bus112,Solar 53,16.09,1
+Solar 54,bus112,Solar 54,9.2,1
+Solar 55,bus112,Solar 55,20.01,1
+Solar 56,bus112,Solar 56,20.07,1
+Solar 57,bus112,Solar 57,6.84,1
+Solar 58,bus112,Solar 58,8.01,1
+Solar 59,bus105,Solar 59,12.42,1
+Solar 60,bus105,Solar 60,15.89,1
+Solar 61,bus105,Solar 61,1.97,1
+Solar 62,bus069,Solar 62,99.9,1
+Solar 63,bus019,Solar 63,60.0,1
+Solar 64,bus015,Solar 64,21.0,1
+Solar 65,bus019,Solar 65,64.8,1
+Solar 66,bus018,Solar 66,123.5,1
+Solar 67,bus018,Solar 67,40.0,1
+Solar 68,bus105,Solar 68,96.0,1
+Solar 69,bus105,Solar 69,123.0,1
+Solar 70,bus092,Solar 70,150.0,1
+Solar 71,bus100,Solar 71,104.99,1
+Solar 72,bus105,Solar 72,25.2,1
+Solar 73,bus069,Solar 73,25.0,1
+Solar 74,bus076,Solar 74,25.0,1
+Solar 75,bus055,Solar 75,30.0,1
+ST Coal 01,bus018,ST Coal 01,20.0,1
+ST NG 01,bus070,ST NG 01,320.0,1
+ST NG 02,bus072,ST NG 02,325.0,1
+ST NG 03,bus025,ST NG 03,712.0,1
+ST NG 04,bus019,ST NG 04,62.6,1
+ST NG 05,bus024,ST NG 05,62.6,1
+ST NG 06,bus092,ST NG 06,110.25,1
+ST NG 07,bus092,ST NG 07,110.25,1
+ST NG 08,bus092,ST NG 08,306.0,1
+ST NG 09,bus092,ST NG 09,345.6,1
+ST NG 10,bus105,ST NG 10,106.25,1
+ST Other 01,bus024,ST Other 01,4.6,1
+ST Other 02,bus024,ST Other 02,30.4,1
+Wind 01,bus024,Wind 01,11.5,1
+Wind 02,bus024,Wind 02,38.0,1
+Wind 03,bus024,Wind 03,10.0,1
+Wind 04,bus024,Wind 04,5.0,1
+Wind 05,bus024,Wind 05,1.1,1
+Wind 06,bus027,Wind 06,24.1,1
+Wind 07,bus027,Wind 07,16.6,1
+Wind 08,bus027,Wind 08,16.6,1
+Wind 09,bus027,Wind 09,16.6,1
+Wind 10,bus027,Wind 10,16.6,1
+Wind 11,bus027,Wind 11,16.6,1
+Wind 12,bus031,Wind 12,97.5,1
+Wind 13,bus031,Wind 13,58.7,1
+Wind 14,bus100,Wind 14,400.0,1
+Wind 15,bus082,Wind 15,50.0,1
+Wind 16,bus082,Wind 16,149.5,1
+Wind 17,bus082,Wind 17,149.5,1
+ENS_bus070,bus070,ENS,101.235,1
+ENS_bus031,bus031,ENS,205.647,1
+ENS_bus048,bus048,ENS,101.235,1
+ENS_bus055,bus055,ENS,101.235,1
+ENS_bus004,bus004,ENS,205.647,1
+ENS_bus104,bus104,ENS,179.981,1
+ENS_bus043,bus043,ENS,101.235,1
+ENS_bus074,bus074,ENS,101.235,1
+ENS_bus017,bus017,ENS,205.647,1
+ENS_bus076,bus076,ENS,101.235,1
+ENS_bus040,bus040,ENS,205.647,1
+ENS_bus064,bus064,ENS,101.235,1
+ENS_bus114,bus114,ENS,179.981,1
+ENS_bus032,bus032,ENS,205.647,1
+ENS_bus054,bus054,ENS,101.235,1
+ENS_bus021,bus021,ENS,205.647,1
+ENS_bus116,bus116,ENS,179.981,1
+ENS_bus091,bus091,ENS,179.981,1
+ENS_bus096,bus096,ENS,179.981,1
+ENS_bus037,bus037,ENS,205.647,1
+ENS_bus016,bus016,ENS,205.647,1
+ENS_bus112,bus112,ENS,179.981,1
+ENS_bus012,bus012,ENS,205.647,1
+ENS_bus022,bus022,ENS,205.647,1
+ENS_bus045,bus045,ENS,101.235,1
+ENS_bus067,bus067,ENS,101.235,1
+ENS_bus009,bus009,ENS,205.647,1
+ENS_bus058,bus058,ENS,101.235,1
+ENS_bus003,bus003,ENS,205.647,1
+ENS_bus051,bus051,ENS,101.235,1
+ENS_bus056,bus056,ENS,101.235,1
+ENS_bus099,bus099,ENS,179.981,1
+ENS_bus100,bus100,ENS,179.981,1
+ENS_bus105,bus105,ENS,179.981,1
+ENS_bus109,bus109,ENS,179.981,1
+ENS_bus110,bus110,ENS,179.981,1
+ENS_bus019,bus019,ENS,205.647,1
+ENS_bus039,bus039,ENS,205.647,1
+ENS_bus084,bus084,ENS,101.235,1
+ENS_bus081,bus081,ENS,101.235,1
+ENS_bus036,bus036,ENS,205.647,1
+ENS_bus089,bus089,ENS,101.235,1
+ENS_bus063,bus063,ENS,101.235,1
+ENS_bus098,bus098,ENS,179.981,1
+ENS_bus046,bus046,ENS,101.235,1
+ENS_bus006,bus006,ENS,205.647,1
+ENS_bus052,bus052,ENS,101.235,1
+ENS_bus065,bus065,ENS,101.235,1
+ENS_bus010,bus010,ENS,205.647,1
+ENS_bus028,bus028,ENS,205.647,1
+ENS_bus073,bus073,ENS,101.235,1
+ENS_bus034,bus034,ENS,205.647,1
+ENS_bus115,bus115,ENS,179.981,1
+ENS_bus068,bus068,ENS,101.235,1
+ENS_bus020,bus020,ENS,205.647,1
+ENS_bus044,bus044,ENS,101.235,1
+ENS_bus072,bus072,ENS,101.235,1
+ENS_bus086,bus086,ENS,101.235,1
+ENS_bus033,bus033,ENS,205.647,1
+ENS_bus079,bus079,ENS,101.235,1
+ENS_bus062,bus062,ENS,101.235,1
+ENS_bus087,bus087,ENS,101.235,1
+ENS_bus001,bus001,ENS,205.647,1
+ENS_bus029,bus029,ENS,205.647,1
+ENS_bus101,bus101,ENS,179.981,1
+ENS_bus102,bus102,ENS,179.981,1
+ENS_bus090,bus090,ENS,101.235,1
+ENS_bus053,bus053,ENS,101.235,1
+ENS_bus013,bus013,ENS,205.647,1
+ENS_bus083,bus083,ENS,101.235,1
+ENS_bus097,bus097,ENS,179.981,1
+ENS_bus041,bus041,ENS,205.647,1
+ENS_bus005,bus005,ENS,205.647,1
+ENS_bus078,bus078,ENS,101.235,1
+ENS_bus093,bus093,ENS,179.981,1
+ENS_bus038,bus038,ENS,205.647,1
+ENS_bus002,bus002,ENS,205.647,1
+ENS_bus103,bus103,ENS,179.981,1
+ENS_bus049,bus049,ENS,101.235,1
+ENS_bus082,bus082,ENS,101.235,1
+ENS_bus094,bus094,ENS,179.981,1
+ENS_bus117,bus117,ENS,179.981,1
+ENS_bus018,bus018,ENS,205.647,1
+ENS_bus023,bus023,ENS,205.647,1
+ENS_bus080,bus080,ENS,101.235,1
+ENS_bus092,bus092,ENS,179.981,1
+ENS_bus015,bus015,ENS,205.647,1
+ENS_bus057,bus057,ENS,101.235,1
+ENS_bus011,bus011,ENS,205.647,1
+ENS_bus108,bus108,ENS,179.981,1
+ENS_bus085,bus085,ENS,101.235,1
+ENS_bus008,bus008,ENS,205.647,1
+ENS_bus075,bus075,ENS,101.235,1
+ENS_bus077,bus077,ENS,101.235,1
+ENS_bus042,bus042,ENS,205.647,1
+ENS_bus024,bus024,ENS,205.647,1
+ENS_bus025,bus025,ENS,205.647,1
+ENS_bus030,bus030,ENS,205.647,1
+ENS_bus088,bus088,ENS,101.235,1
+ENS_bus106,bus106,ENS,179.981,1
+ENS_bus014,bus014,ENS,205.647,1
+ENS_bus047,bus047,ENS,101.235,1
+ENS_bus095,bus095,ENS,179.981,1
+ENS_bus111,bus111,ENS,179.981,1
+ENS_bus061,bus061,ENS,101.235,1
+ENS_bus118,bus118,ENS,179.981,1
+ENS_bus066,bus066,ENS,101.235,1
+ENS_bus069,bus069,ENS,101.235,1
+ENS_bus113,bus113,ENS,179.981,1
+ENS_bus027,bus027,ENS,205.647,1
+ENS_bus071,bus071,ENS,101.235,1
+ENS_bus035,bus035,ENS,205.647,1
+ENS_bus060,bus060,ENS,101.235,1
+ENS_bus007,bus007,ENS,205.647,1
+ENS_bus026,bus026,ENS,205.647,1
+ENS_bus107,bus107,ENS,179.981,1
+ENS_bus050,bus050,ENS,101.235,1
+ENS_bus059,bus059,ENS,101.235,1

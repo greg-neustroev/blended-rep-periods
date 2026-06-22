@@ -1,0 +1,8 @@
+id,from,to,carrier,export_capacity,import_capacity
+branch4,2,3,electricity,80.0,80.0
+branch1,1,2,electricity,13.3,13.3
+branch2,1,4,electricity,13.3,13.3
+branch7,4,10,electricity,13.3,13.3
+branch3,1,10,electricity,66.6,66.6
+branch5,3,4,electricity,66.6,66.6
+branch6,3,4,electricity,28.4,28.4

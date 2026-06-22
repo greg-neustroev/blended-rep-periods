@@ -1,0 +1,12 @@
+id,type,carrier_out
+Solitude,generation,electricity
+Park City,generation,electricity
+Alta,generation,electricity
+Brighton,generation,electricity
+Sundance,generation,electricity
+HydroDispatch2,generation,electricity
+HydroDispatch1,storage,electricity
+HydroDispatch3,storage,electricity
+SolarBusC,generation,electricity
+WindBusA,generation,electricity
+ENS,generation,electricity
