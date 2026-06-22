@@ -70,7 +70,7 @@ function project_onto_nonnegative_orthant(vector::AbstractVector{Float64})
 end
 
 """
-  projected_subgradient_descent!(x; gradient, projection, niters, rtol, learning_rate, adaptive_grad)
+  projected_subgradient_descent!(x; gradient, projection, niters, rtol, learning_rate)
 
 Fits `x` using the projected gradient descent scheme.
 
@@ -87,11 +87,6 @@ The arguments:
   - `tol`: tolerance; when no components of `x` improve by more than `tol`, the
     algorithm stops
   - `learning_rate`: learning rate of the algorithm
-  - `adaptive_grad`: if true, the learning rate is adjusted using the adaptive
-    gradient method, see [John Duchi, Elad Hazan, and Yoram Singer. 2011.
-    _Adaptive Subgradient Methods for Online Learning and Stochastic
-      Optimization._ J. Mach. Learn. Res. 12, null (2/1/2011), 2121–2159.]
-      (https://dl.acm.org/doi/10.5555/1953048.2021068)
 """
 function projected_subgradient_descent!(
   x::AbstractVector{Float64};
@@ -100,30 +95,15 @@ function projected_subgradient_descent!(
   niters::Int=1000,
   tol::Float64=1e-5,
   learning_rate::Float64=1e-3,
-  adaptive_grad=false,
 )
   # It is possible that the initial guess is not in the required subspace;
   # project it first.
   x = projection(x)
 
-  if adaptive_grad
-    G = zeros(length(x))
-  end
-
   for _ ∈ 1:niters
-    g = subgradient(x)  # find the subgradient
-
-    # if all(abs.(g) .≤ tol)
-    #   break
-    # end
-
-    if adaptive_grad    # find the learning rate
-      G += g .^ 2
-      α = learning_rate ./ (1e-6 .+ .√(G))
-    else
-      α = learning_rate
-    end
-    y = x .- α .* g            # gradent step, may leave the domain
+    g = subgradient(x)  # find the gradient
+    α = learning_rate
+    y = x .- α .* g            # gradient step, may leave the domain
     x_new = projection(y)      # projection step, return to the domain
 
     diff = maximum(abs.(x_new .- x))  # ‖x_prev − x‖_∞: how much the vector moved
