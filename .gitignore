@@ -33,7 +33,10 @@ JuliaLocalPreferences.toml
 .Rproj.user
 .Rproj
 
-outputs/gep_*
-outputs/tyndp2024_*
+outputs/gridmod/rts_*
+outputs/sienna/5bus_*
+outputs/sienna/118bus_*
+outputs/tyndp/gep_*
+outputs/tyndp/p2x_*
 plots
 aux_data
