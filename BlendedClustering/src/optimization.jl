@@ -6,6 +6,14 @@ function add_term!(lhs::AffExpr, d::Dict, key, coef::Float64)
     return nothing
 end
 
+# Return `1:n` (a range) when `ids` is exactly the contiguous set `1:n`, so that
+# JuMP's DenseAxisArray indexes that dimension with O(1) arithmetic instead of
+# building a `Dict` and hashing on every lookup. Falls back to `ids` unchanged
+# if it is not contiguous-from-one.
+function as_range(ids::AbstractVector)
+    return ids == eachindex(ids) ? Base.OneTo(length(ids)) : ids
+end
+
 """
     @timed_step timings key msg begin ... end
 
@@ -34,6 +42,14 @@ macro timed_step(timings, key, msg, ex)
 end
 
 function create_optimization_model!(connection, model, clustering_result)
+    # By default JuMP builds a String name for every variable and constraint
+    # (e.g. "power_out[asset,1,4567]"); on the full-horizon models that is
+    # millions of string interpolations and allocations, and they dominate the
+    # build. We never read the MOI names (variables are accessed through the
+    # `model[:symbol]` registry, not by name), so disable them — per the JuMP
+    # performance tips this roughly halves build time and allocations.
+    set_string_names_on_creation(model, false)
+
     # Per-block formulation timings (seconds). `duckdb_queries` accumulates the
     # time spent executing and *materializing* every DuckDB query, so it can be
     # compared against the JuMP-build time captured by the per-block timers.
@@ -63,9 +79,13 @@ function create_optimization_model!(connection, model, clustering_result)
         S_seas = get_index_set(connection, "seasonal_storage_assets")
         S_seas_in = get_index_set(connection, "seasonal_storage_assets_can_charge")
         C = get_index_set(connection, "conversion_assets")
-        H = get_index_set(connection, "timesteps")
-        D = get_index_set(connection, "periods")
-        R = collect(1:size(clustering_result.weight_matrix, 2))
+        # R, H and D index the representative periods, intra-period timesteps and
+        # base periods — contiguous 1:n integer sets. Keep them as ranges so the
+        # DenseAxisArray dimensions they index use O(1) arithmetic lookups rather
+        # than Dict hashing (these dimensions dominate the indexing work).
+        H = as_range(get_index_set(connection, "timesteps"))
+        D = as_range(get_index_set(connection, "periods"))
+        R = Base.OneTo(size(clustering_result.weight_matrix, 2))
 
         # Compute the representative period weights in the operations costs
         rp_weight = sum(clustering_result.weight_matrix, dims=1)
