@@ -94,10 +94,21 @@ function project_onto_nonnegative_orthant(vector::AbstractVector{Float64})
   return max.(vector, 0.0)
 end
 
+# Numerical backstop on the PGD iteration count. In practice the resolution-based
+# stopping test in `projected_gradient_descent!` fires first; this constant only
+# rules out pathological non-termination from floating-point plateaus.
+const PGD_MAX_ITERS = 100_000
+
 """
-  projected_gradient_descent!(x; gradient, projection, niters, rtol, learning_rate)
+  projected_gradient_descent!(x; gradient, projection, tol, learning_rate)
 
 Fits `x` using the projected gradient descent scheme.
+
+`tol` is the resolution to which the components of `x` are determined: the
+algorithm iterates until no component moves by more than `tol` between steps, i.e.
+the solution has settled to within the precision that is kept downstream (anything
+finer is discarded). No iteration count is imposed; the loop is bounded only by the
+numerical backstop `PGD_MAX_ITERS`.
 
 The arguments:
 
@@ -108,34 +119,37 @@ The arguments:
     implicit loss
   - `projection`: the projection operator, that is, a function that, given a
     vector `x`, finds a point within some subspace that is closest to `x`
-  - `niters`: maximum number of projected gradient descent iterations
-  - `tol`: tolerance; when no components of `x` improve by more than `tol`, the
-    algorithm stops
-  - `learning_rate`: learning rate of the algorithm
+  - `tol`: the resolution; the algorithm stops once no component of `x` changes
+    by more than `tol` in an iteration
+  - `learning_rate`: the step size `α` (the callers set it to `1/L` per instance)
 """
 function projected_gradient_descent!(
   x::AbstractVector{Float64};
   gradient::Function,
   projection::Function,
-  niters::Int=1000,
-  tol::Float64=1e-5,
+  tol::Float64=1e-2,
   learning_rate::Float64=1e-3,
 )
   # It is possible that the initial guess is not in the required subspace;
   # project it first.
   x = projection(x)
 
-  for _ ∈ 1:niters
+  # Certified stop (paper's Algorithm 2): the projected-gradient mapping residual
+  # ‖x − x_new‖₂ equals α·‖G(x)‖₂, so stopping at ‖x − x_new‖₂ ≤ tol·α certifies
+  # ‖G(x)‖₂ ≤ tol. Scaling by the step size α keeps the projections accurate
+  # enough for the greedy-hull cache certificate (Lemma 1) to stay sound — a flat
+  # ∞-norm move threshold is too coarse at the resolutions we use.
+  threshold = tol * learning_rate
+  for _ ∈ 1:PGD_MAX_ITERS
     g = gradient(x)              # find the gradient
     y = x .- learning_rate .* g  # gradient step, may leave the domain
     x_new = projection(y)        # projection step, return to the domain
 
-    diff = maximum(abs.(x_new .- x))  # ‖x_prev − x‖_∞: how much the vector moved
-    if diff ≤ tol / niters
+    converged = norm(x_new .- x) ≤ threshold  # ‖projected-gradient mapping‖₂ ≤ tol
+    x = x_new
+    if converged
       break
     end
-
-    x = x_new
   end
   return x
 end
@@ -161,10 +175,11 @@ The arguments:
       - `:conical_bounded`: each period is represented as a conical sum of the
         representative periods (a sum with nonnegative weights) with the total
         weight bounded from above by one.
-  - `tol`: algorithm's tolerance; when the weights are adjusted by a value less
-    then or equal to `tol`, they stop being fitted further.
-  - other arguments control the projected gradient method; they are passed
-    through to `projected_gradient_descent!`.
+  - `tol`: the resolution to which weights are determined; the single tolerance
+    used throughout fitting. The projected gradient descent stops once no weight
+    moves by more than `tol`, base periods already reconstructed within `tol` skip
+    fitting, and fitted weights below `tol` are dropped (e.g. with `tol = 1e-2`
+    weights are blending percentages and contributions under 1% are noise).
 """
 function fit_rep_period_weights!(
   weight_matrix::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}},
@@ -172,7 +187,6 @@ function fit_rep_period_weights!(
   rp_matrix::Matrix{Float64};
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
-  args...,
 )
   # Determine the appropriate projection method
   if weight_type ≡ :dirac
@@ -231,9 +245,9 @@ function fit_rep_period_weights!(
     gradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
     initial_projection_eror = norm(rp_matrix * x - target_vector)
     if initial_projection_eror ≤ tol
-      continue
+      continue  # already reconstructed within the resolution; keep the initial weights
     end
-    x = projected_gradient_descent!(x; gradient, projection, tol=tol * 0.01, learning_rate=step_size, args...)
+    x = projected_gradient_descent!(x; gradient, projection, tol, learning_rate=step_size)
     fitted_projection_error = norm(rp_matrix * x - target_vector)
     if fitted_projection_error > initial_projection_eror
       @warn "Projection error after fitting is larger than before fitting. Using the initial guess instead."
@@ -241,7 +255,10 @@ function fit_rep_period_weights!(
       @info "Fitted projection error: $fitted_projection_error"
       x = initial_weight_matrix[:, period]
     end
-    x[x.<tol] .= 0.0  # replace insignificant small values with zeros
+    # Drop weights below the resolution. The projections keep `x` non-negative, so
+    # `x .< tol` is equivalent to `abs.(x) .< tol` (no `abs` needed) and captures
+    # exactly the contributions too small to matter (e.g. < 1% for tol = 1e-2).
+    x[x.<tol] .= 0.0
     if weight_type ≡ :convex || weight_type ≡ :conical_bounded
       # Because some values might have been removed, convexity can be lost.
       # In the upper-bounded case, sometimes the sum can be slightly more than one
@@ -282,16 +299,13 @@ The arguments:
       - `:conical_bounded`: each period is represented as a conical sum of the
         representative periods (a sum with nonnegative weights) with the total
         weight bounded from above by one.
-  - `tol`: algorithm's tolerance; when the weights are adjusted by a value less
-    then or equal to `tol`, they stop being fitted further.
-  - other arguments control the projected gradient method; they are passed
-    through to `projected_gradient_descent!`.
+  - `tol`: the resolution to which weights are determined; the single tolerance
+    used throughout fitting (see the primary method).
 """
 function fit_rep_period_weights!(
   clustering_result::ClusteringResult;
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
-  args...,
 )
   fit_rep_period_weights!(
     clustering_result.weight_matrix,
@@ -299,6 +313,5 @@ function fit_rep_period_weights!(
     clustering_result.rp_matrix;
     weight_type,
     tol,
-    args...,
   )
 end

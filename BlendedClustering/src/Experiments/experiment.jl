@@ -34,7 +34,7 @@ function run_experiment(
     time_to_fit_weights = @elapsed fit_rep_period_weights!(
         clustering_result;
         weight_type=experiment_data.weight_type,
-        niters=experiment_data.niters,
+        tol=experiment_data.tol,
     )
 
     projection_errors = clustering_result.rp_matrix * clustering_result.weight_matrix' - clustering_result.clustering_matrix

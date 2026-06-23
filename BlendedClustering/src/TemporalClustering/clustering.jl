@@ -404,7 +404,8 @@ function greedy_convex_hull(
   n_points::Int,
   initial_indices::Union{Vector{Int},Nothing}=nothing,
   mean_vector::Union{Vector{Float64},Nothing}=nothing,
-  cache::Bool=true
+  cache::Bool=true,
+  tol::Float64=1e-2,
 )
   if initial_indices ≡ nothing
     if mean_vector ≡ nothing
@@ -448,7 +449,7 @@ function greedy_convex_hull(
       else
         gradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
         x = projection_matrix * target_vector
-        x = projected_gradient_descent!(x; gradient, projection=project_onto_simplex, learning_rate=step_size)
+        x = projected_gradient_descent!(x; gradient, projection=project_onto_simplex, learning_rate=step_size, tol)
         projected_target = hull_matrix * x
         d = norm(projected_target - target_vector)
         projection_cache[column_index] = (projected_target, d)
@@ -485,6 +486,9 @@ Finds representative periods via data clustering. All distances are Euclidean.
     is done for `n_rp - 1` periods, and the last period is added as a special
     shorter representative period
   - `method`: clustering method to use, either `:k_means` and `:k_medoids`
+  - `tol`: the projected gradient descent tolerance `ε` used by the hull methods
+    to rank candidate periods by their distance to the current hull (ignored by
+    `:k_means`/`:k_medoids`).
   - other named arguments can be provided; they are passed to the clustering method.
 """
 function find_representative_periods(
@@ -492,6 +496,7 @@ function find_representative_periods(
   n_rp::Int;
   drop_incomplete_last_period::Bool=false,
   method::Symbol=:k_means,
+  tol::Float64=1e-2,
   args...,
 )
 
@@ -547,7 +552,7 @@ function find_representative_periods(
     rp_matrix = clustering_matrix[:, kmedoids_result.medoids]
     assignments = kmedoids_result.assignments
   elseif method ≡ :convex_hull
-    hull_indices = greedy_convex_hull(clustering_matrix; n_points=n_rp)
+    hull_indices = greedy_convex_hull(clustering_matrix; n_points=n_rp, tol)
 
     rp_matrix = clustering_matrix[:, hull_indices]
     assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
@@ -555,7 +560,7 @@ function find_representative_periods(
     # Add a null vector as a column, run the convex-hull method initialized at
     # it, then drop it; the remaining positive weights sum to at most one.
     matrix = [zeros(size(clustering_matrix, 1), 1) clustering_matrix]
-    hull_indices = greedy_convex_hull(matrix; n_points=n_rp + 1, initial_indices=[1])
+    hull_indices = greedy_convex_hull(matrix; n_points=n_rp + 1, initial_indices=[1], tol)
     popfirst!(hull_indices)
     hull_indices .-= 1
 
@@ -566,7 +571,7 @@ function find_representative_periods(
     normalize!(normal_vector)
     projection_coefficients = [1.0 / dot(normal_vector, clustering_matrix[:, j]) for j ∈ axes(clustering_matrix, 2)]
     projected_matrix = [clustering_matrix[i, j] * projection_coefficients[j] for i ∈ axes(clustering_matrix, 1), j ∈ axes(clustering_matrix, 2)]
-    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector)
+    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol)
 
     rp_matrix = clustering_matrix[:, hull_indices]
     assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
@@ -635,6 +640,7 @@ function cluster_using_experiment_data(experiment_data, connection)
     clustering_df,
     n_rep_periods;
     method=clustering_method,
+    tol=experiment_data.tol,
     init=:kmcen
   )
 end

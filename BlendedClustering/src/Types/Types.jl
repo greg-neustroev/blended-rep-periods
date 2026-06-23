@@ -13,6 +13,10 @@ import Tables
 export ExperimentData, ExperimentResult, read_run_data
 export ClusteringResult, AuxiliaryClusteringData
 
+# Default weight resolution tolerance used when a configuration CSV omits the
+# optional `tol` column: weights are fit and reported only down to this precision.
+const DEFAULT_PGD_TOL = 1e-2
+
 
 """
     read_run_data(path) -> DataFrame
@@ -20,7 +24,8 @@ export ClusteringResult, AuxiliaryClusteringData
 Read the experiment configuration at `path` (a CSV with one experiment per row)
 into a `DataFrame`, checking that the required columns are present and converting
 the categorical columns (`clustering_type`, `weight_type`, `evaluation_type`) to
-`Symbol`s.
+`Symbol`s. The projected gradient descent tolerance column `tol` is optional and
+defaults to `DEFAULT_PGD_TOL` when absent.
 """
 function read_run_data(path)
     df = CSV.read(path, DataFrame)
@@ -29,7 +34,6 @@ function read_run_data(path)
         "period_length",
         "clustering_type",
         "weight_type",
-        "niters",
         "evaluation_type",
     ])
     if !issubset(required_columns, Set(names(df)))
@@ -52,17 +56,20 @@ struct ExperimentData
     period_length::Int
     clustering_type::Symbol
     weight_type::Symbol
-    niters::Int
+    tol::Float64
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
+        # `tol` (the PGD tolerance ε) is optional; fall back to the default when
+        # the configuration CSV does not provide the column.
+        tol = hasproperty(run_data_row, :tol) ? Float64(run_data_row.tol) : DEFAULT_PGD_TOL
         name = join([
                 base_name,
                 run_data_row.n_rep_periods,
                 run_data_row.period_length,
                 string(run_data_row.clustering_type),
                 string(run_data_row.weight_type),
-                run_data_row.niters,
+                tol,
             ],
             "_"
         )
@@ -72,7 +79,7 @@ struct ExperimentData
             run_data_row.period_length,
             run_data_row.clustering_type,
             run_data_row.weight_type,
-            run_data_row.niters,
+            tol,
             run_data_row.evaluation_type
         )
     end

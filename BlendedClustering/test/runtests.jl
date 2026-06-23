@@ -42,7 +42,7 @@ end
     step = 1 / opnorm(R, 2)^2  # the principled 1/L step used in the package
     w = projected_gradient_descent!(
       rand(3); gradient=g, projection=project_onto_simplex,
-      learning_rate=step, niters=5000,
+      learning_rate=step, tol=1e-8,
     )
     @test sum(w) ≈ 1
     @test all(w .>= -1e-9)
@@ -90,16 +90,16 @@ end
     df = synthetic_clustering_df(seed=4)
     # Convex: nonnegative rows summing to one.
     W = Matrix(fit_rep_period_weights!(
-      find_representative_periods(df, 3; method=:k_means); weight_type=:convex, niters=500))
+      find_representative_periods(df, 3; method=:k_means); weight_type=:convex))
     @test all(W .>= -1e-8)
     @test all(abs.(sum(W, dims=2) .- 1) .< 1e-5)
     # Conic: nonnegative.
     W = Matrix(fit_rep_period_weights!(
-      find_representative_periods(df, 3; method=:k_means); weight_type=:conical, niters=500))
+      find_representative_periods(df, 3; method=:k_means); weight_type=:conical))
     @test all(W .>= -1e-8)
     # Sub-unit conic: nonnegative rows summing to at most one.
     W = Matrix(fit_rep_period_weights!(
-      find_representative_periods(df, 3; method=:k_means); weight_type=:conical_bounded, niters=500))
+      find_representative_periods(df, 3; method=:k_means); weight_type=:conical_bounded))
     @test all(W .>= -1e-8)
     @test all(sum(W, dims=2) .<= 1 + 1e-6)
   end
@@ -110,23 +110,39 @@ end
     # well-defined where `rp_matrix \\ clustering_matrix` would throw.
     df = synthetic_clustering_df(n_timesteps=2, assets=["a", "b"], seed=7)  # 4 features
     res = find_representative_periods(df, 3; method=:k_means)               # 4x3 RP matrix
-    W = Matrix(fit_rep_period_weights!(res; weight_type=:conical_bounded, niters=500))
+    W = Matrix(fit_rep_period_weights!(res; weight_type=:conical_bounded))
     @test all(W .>= -1e-8)
     @test all(sum(W, dims=2) .<= 1 + 1e-6)
   end
 
-  @testset "experiment config schema has no distance or learning_rate" begin
+  @testset "experiment config schema: optional tol defaults" begin
     mktempdir() do dir
       path = joinpath(dir, "run.csv")
       open(path, "w") do io
-        println(io, "n_rep_periods,period_length,clustering_type,weight_type,niters,evaluation_type")
-        println(io, "5,24,hull,convex,1000,investment_regret")
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,evaluation_type")
+        println(io, "5,24,hull,convex,investment_regret")
       end
       rd = read_run_data(path)
       @test "distance" ∉ names(rd)
       @test "learning_rate" ∉ names(rd)
+      @test "niters" ∉ names(rd)
       ed = ExperimentData(first(eachrow(rd)), "gep")
-      @test ed.name == "gep_5_24_hull_convex_1000"   # no distance/learning_rate fields
+      # The optional `tol` column is absent, so it falls back to the default.
+      @test ed.tol == BC.DEFAULT_PGD_TOL
+      @test ed.name == "gep_5_24_hull_convex_$(BC.DEFAULT_PGD_TOL)"
+    end
+  end
+
+  @testset "experiment config schema: explicit tol" begin
+    mktempdir() do dir
+      path = joinpath(dir, "run.csv")
+      open(path, "w") do io
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type")
+        println(io, "5,24,hull,convex,0.001,investment_regret")
+      end
+      ed = ExperimentData(first(eachrow(read_run_data(path))), "gep")
+      @test ed.tol == 0.001
+      @test ed.name == "gep_5_24_hull_convex_0.001"
     end
   end
 
