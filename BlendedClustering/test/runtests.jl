@@ -52,8 +52,8 @@ end
   end
 
   @testset "greedy hull cache is sound (cached == uncached)" begin
-    # Lemma 1: the projection-cached run selects exactly the same
-    # representatives, in the same order, as recomputing every projection.
+    # The projection-cached run must select exactly the same representatives,
+    # in the same order, as recomputing every projection from scratch.
     for seed in 1:30
       Random.seed!(seed)
       M = rand(rand(5:18), rand(20:50))

@@ -35,7 +35,8 @@ function create_optimization_model!(connection, model, clustering_result)
         operations_weight = get_scalar(connection, "operations_weight")
         timestep_duration = get_scalar(connection, "timestep_duration")
 
-        # Create indexing sets; we use the same notation as in the paper here
+        # Create indexing sets, named with the usual single-letter set notation
+        # (L lines, A assets, G generators, S storage, C conversion, ...).
         L = get_index_set(connection, "transmission_lines")
         A = get_index_set(connection, "assets")
         A_inv = get_index_set(connection, "investable_assets")

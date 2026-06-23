@@ -47,9 +47,9 @@ the dataset's regret metric.
 
 - **rts** is the long, high-resolution case: the full leap year at **5-minute**
   resolution (105 408 steps). Representative periods are days, but each day is
-  288 five-minute steps — directly answering reviews that both prior case studies
-  were exactly 8760 steps. The series length is read from the data, so the model
-  handles hourly and sub-hourly resolutions without any code changes.
+  288 five-minute steps, so unlike the other (hourly, 8760-step) datasets it
+  exercises the sub-hourly regime. The series length is read from the data, so the
+  model handles hourly and sub-hourly resolutions without any code changes.
 
 ## Modelling conventions and per-dataset notes
 
