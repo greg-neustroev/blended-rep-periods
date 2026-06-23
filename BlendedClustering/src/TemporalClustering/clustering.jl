@@ -468,6 +468,74 @@ function greedy_convex_hull(
 end
 
 """
+    select_representatives(matrix, n_rp, n_periods, method; tol, args...)
+
+Select `n_rp` representative columns of `matrix` using `method` and assign every
+one of the `n_periods` base periods to a representative. Returns the tuple
+`(rp_matrix, assignments, selected_indices)`:
+
+  - `rp_matrix`: the representative columns (or k-means centroids) in the space
+    of `matrix`;
+  - `assignments`: for each base period, the index of its nearest representative;
+  - `selected_indices`: the column indices chosen as representatives, or `nothing`
+    for `:k_means` (whose representatives are synthetic centroids, not columns).
+
+This is the method dispatch shared by every clustering path. `matrix` is the
+space in which selection and nearest-representative assignment happen; callers
+that cluster in a transformed feature space (e.g. economic normalization) pass
+that space here and reconstruct the output profiles separately.
+"""
+function select_representatives(
+  matrix::AbstractMatrix{Float64},
+  n_rp::Int,
+  n_periods::Int,
+  method::Symbol;
+  tol::Float64=1e-2,
+  args...,
+)
+  if method ≡ :k_means
+    kmeans_result = kmeans(matrix, n_rp; distance=Euclidean(), args...)
+    rp_matrix = kmeans_result.centers
+    assignments = kmeans_result.assignments
+    selected_indices = nothing
+  elseif method ≡ :k_medoids
+    # k-medoids uses distance matrix instead of clustering matrix
+    distance_matrix = pairwise(Euclidean(), matrix; dims=2)
+    kmedoids_result = kmedoids(distance_matrix, n_rp; args...)
+    rp_matrix = matrix[:, kmedoids_result.medoids]
+    assignments = kmedoids_result.assignments
+    selected_indices = kmedoids_result.medoids
+  elseif method ≡ :convex_hull
+    hull_indices = greedy_convex_hull(matrix; n_points=n_rp, tol)
+    rp_matrix = matrix[:, hull_indices]
+    assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    selected_indices = hull_indices
+  elseif method ≡ :convex_hull_with_null
+    # Add a null vector as a column, run the convex-hull method initialized at
+    # it, then drop it; the remaining positive weights sum to at most one.
+    augmented = [zeros(size(matrix, 1), 1) matrix]
+    hull_indices = greedy_convex_hull(augmented; n_points=n_rp + 1, initial_indices=[1], tol)
+    popfirst!(hull_indices)
+    hull_indices .-= 1
+    rp_matrix = matrix[:, hull_indices]
+    assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    selected_indices = hull_indices
+  elseif method ≡ :conical_hull
+    normal_vector = vec(mean(matrix, dims=2))
+    normalize!(normal_vector)
+    projection_coefficients = [1.0 / dot(normal_vector, matrix[:, j]) for j ∈ axes(matrix, 2)]
+    projected_matrix = [matrix[i, j] * projection_coefficients[j] for i ∈ axes(matrix, 1), j ∈ axes(matrix, 2)]
+    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol)
+    rp_matrix = matrix[:, hull_indices]
+    assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    selected_indices = hull_indices
+  else
+    throw(ArgumentError("Clustering method is not supported"))
+  end
+  return rp_matrix, assignments, selected_indices
+end
+
+"""
   find_representative_periods(
     clustering_data;
     n_rp = 10,
@@ -535,49 +603,7 @@ function find_representative_periods(
   )
 
   # 4. Do the clustering, now that the data is transformed into a matrix
-  if method ≡ :k_means
-    # Do the clustering
-    kmeans_result = kmeans(clustering_matrix, n_rp; distance=Euclidean(), args...)
-
-    # Reinterpret the results
-    rp_matrix = kmeans_result.centers
-    assignments = kmeans_result.assignments
-  elseif method ≡ :k_medoids
-    # Do the clustering
-    # k-medoids uses distance matrix instead of clustering matrix
-    distance_matrix = pairwise(Euclidean(), clustering_matrix; dims=2)
-    kmedoids_result = kmedoids(distance_matrix, n_rp; args...)
-
-    # Reinterpret the results
-    rp_matrix = clustering_matrix[:, kmedoids_result.medoids]
-    assignments = kmedoids_result.assignments
-  elseif method ≡ :convex_hull
-    hull_indices = greedy_convex_hull(clustering_matrix; n_points=n_rp, tol)
-
-    rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
-  elseif method ≡ :convex_hull_with_null
-    # Add a null vector as a column, run the convex-hull method initialized at
-    # it, then drop it; the remaining positive weights sum to at most one.
-    matrix = [zeros(size(clustering_matrix, 1), 1) clustering_matrix]
-    hull_indices = greedy_convex_hull(matrix; n_points=n_rp + 1, initial_indices=[1], tol)
-    popfirst!(hull_indices)
-    hull_indices .-= 1
-
-    rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
-  elseif method ≡ :conical_hull
-    normal_vector = vec(mean(clustering_matrix, dims=2))
-    normalize!(normal_vector)
-    projection_coefficients = [1.0 / dot(normal_vector, clustering_matrix[:, j]) for j ∈ axes(clustering_matrix, 2)]
-    projected_matrix = [clustering_matrix[i, j] * projection_coefficients[j] for i ∈ axes(clustering_matrix, 1), j ∈ axes(clustering_matrix, 2)]
-    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol)
-
-    rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
-  else
-    throw(ArgumentError("Clustering method is not supported"))
-  end
+  rp_matrix, assignments, _ = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, args...)
 
   # Fill in the weight matrix using the assignments
 
