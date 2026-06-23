@@ -1,4 +1,17 @@
+"""
+Core data types shared across the package: experiment configuration, clustering
+results, and the per-experiment result record.
+"""
+module Types
+
+using CSV
+using DataFrames
+using JuMP
+using SparseArrays
+import Tables
+
 export ExperimentData, RunData, ExperimentResult
+export ClusteringResult, AuxiliaryClusteringData
 
 
 """
@@ -203,3 +216,5 @@ Tables.columns(res::ExperimentResult) = (;
     time_to_formulate_model=[res.time_to_formulate_model],
     time_to_solve=[res.time_to_solve],
 )
+
+end # module Types

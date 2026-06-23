@@ -1,4 +1,3 @@
-export find_representative_periods, split_into_periods!
 
 """
     combine_periods!(df)
@@ -660,4 +659,18 @@ function single_period_clustering_result(connection)
   clustering_matrix = ones(1, 1)
   rp_matrix = ones(1, 1)
   return ClusteringResult(rp_df, weight_matrix, clustering_matrix, rp_matrix)
+end
+
+function clustering_type_to_method(clustering_type, weight_type)
+    if clustering_type ≡ :hull
+        if weight_type ≡ :conical
+            :conical_hull
+        elseif weight_type ≡ :conical_bounded
+            :convex_hull_with_null
+        else
+            :convex_hull
+        end
+    else
+        clustering_type
+    end
 end

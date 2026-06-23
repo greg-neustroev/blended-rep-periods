@@ -1,4 +1,3 @@
-export fit_rep_period_weights!, projected_gradient_descent!, project_onto_simplex
 
 """
   project_onto_simplex(vector)
