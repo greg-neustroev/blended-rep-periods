@@ -1,7 +1,7 @@
 # Experiment input datasets
 
 Each dataset is a directory of CSVs in the format consumed by
-`read_data_from_dir` (see `BlendedClustering/src/io.jl`), plus a sibling
+`read_data_from_dir` (see `BlendedClustering/src/Database/ingestion.jl`), plus a sibling
 `<name>.csv` experiment-configuration file. Datasets are grouped by **data
 source** so the experiments draw on more than one independent origin:
 
@@ -12,13 +12,13 @@ inputs/
   gridmod/  rts/              US, RTS-GMLC from github.com/gridmod/rts-gmlc
 ```
 
-`main.jl` lists the datasets to run in `inputs`. An input id is a relative path
-such as `sienna/118bus`; the data lives in `inputs/sienna/118bus/` and its config
-in `inputs/sienna/118bus.csv`.
+`case_studies.toml` lists the datasets to run in `inputs`. An input id is a
+relative path such as `sienna/118bus`; the data lives in `inputs/sienna/118bus/`
+and its config in `inputs/sienna/118bus.csv`. Every dataset needed to reproduce
+the results is committed here — the repository is self-contained.
 
-The Sienna/gridmod datasets were produced from their upstream sources by a one-off
-converter kept in `aux_data/` (not part of the package and not committed). The
-upstream sources also live under `aux_data/` (gitignored).
+The Sienna and gridmod datasets were derived from their respective upstream
+sources (see the per-dataset notes below).
 
 ## Dataset files
 
@@ -48,8 +48,8 @@ the dataset's regret metric.
 - **rts** is the long, high-resolution case: the full leap year at **5-minute**
   resolution (105 408 steps). Representative periods are days, but each day is
   288 five-minute steps — directly answering reviews that both prior case studies
-  were exactly 8760 steps. The series length is read from the data, so pointing
-  the converter at the hourly DAY_AHEAD files instead would just work.
+  were exactly 8760 steps. The series length is read from the data, so the model
+  handles hourly and sub-hourly resolutions without any code changes.
 
 ## Modelling conventions and per-dataset notes
 
