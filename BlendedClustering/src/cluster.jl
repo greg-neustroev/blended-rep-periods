@@ -607,6 +607,20 @@ function cluster_using_experiment_data(experiment_data, connection)
   clustering_type = experiment_data.clustering_type
   weight_type = experiment_data.weight_type
 
+  # Fast path: when a single representative period is requested and the data
+  # already consists of a single period (i.e. the period length covers the
+  # whole horizon), clustering is a no-op — the representative period *is* the
+  # full profile. Skip the profiles → matrix → k-means → DataFrame round-trip.
+  if n_rep_periods == 1
+    n_periods = DBInterface.execute(
+      connection,
+      "SELECT max(period) AS n FROM profiles"
+    ) |> first |> first
+    if n_periods == 1
+      return single_period_clustering_result(connection)
+    end
+  end
+
   # Collect the clustering data into a data frame
   clustering_df = DBInterface.execute(
     connection,
@@ -624,4 +638,26 @@ function cluster_using_experiment_data(experiment_data, connection)
     method=clustering_method,
     init=:kmcen
   )
+end
+
+"""
+    single_period_clustering_result(connection)
+
+Build the trivial `ClusteringResult` for the case of a single representative
+period that spans the entire horizon. The representative profile is the full
+profile data relabelled with `rep_period = 1`, and the single period represents
+itself with weight `1.0` (matching `find_period_weights` for one complete
+period). The `1×1` `rp_matrix`/`clustering_matrix` make the projection error
+zero and keep `fit_rep_period_weights!` well-defined for every weight type.
+"""
+function single_period_clustering_result(connection)
+  rp_df = DBInterface.execute(
+    connection,
+    "SELECT 1 AS rep_period, timestep, id, profile_type, value FROM profiles ORDER BY timestep, id"
+  ) |> DataFrame
+  rp_df.rep_period = Int.(rp_df.rep_period)
+  weight_matrix = ones(1, 1)
+  clustering_matrix = ones(1, 1)
+  rp_matrix = ones(1, 1)
+  return ClusteringResult(rp_df, weight_matrix, clustering_matrix, rp_matrix)
 end
