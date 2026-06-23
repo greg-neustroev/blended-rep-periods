@@ -1,3 +1,12 @@
+"""
+    create_optimization_model!(connection, model, clustering_result) -> Dict{String,Float64}
+
+Build the investment-and-operations problem in `model` from the DuckDB views
+reachable through `connection` and the representative-period weights in
+`clustering_result`. Adds all variables, the objective, and every constraint
+family in place, and returns a dictionary of per-block formulation timings (in
+seconds), including the `"duckdb_queries"` total spent querying DuckDB.
+"""
 function create_optimization_model!(connection, model, clustering_result)
     # By default JuMP builds a String name for every variable and constraint
     # (e.g. "power_out[asset,1,4567]"); on the full-horizon models that is
@@ -125,6 +134,10 @@ function create_optimization_model!(connection, model, clustering_result)
         # combinations that actually carry generation/flow get an entry; absent
         # keys are treated as zero by `add_term!` below. This avoids allocating a
         # dense |N|×|X|×|R|×|H| array of (mostly zero) expressions.
+        # Keyed by (location, carrier, rep_period, timestep). The key type is left
+        # abstract on purpose: `location`/`carrier` come straight from the input
+        # data and are dataset-dependent (e.g. integer bus ids in `sienna` vs
+        # string country codes in `tyndp`), so no single concrete tuple type fits.
         total_power_out = Dict{Tuple,AffExpr}()
         total_power_in = Dict{Tuple,AffExpr}()
         total_flow_in = Dict{Tuple,AffExpr}()

@@ -27,7 +27,7 @@ function run_experiments(
 
     for input in inputs
         @info "Reading experiment configuration"
-        run_data = RunData(joinpath(inputs_dir, "$(input).csv"))
+        run_data = read_run_data(joinpath(inputs_dir, "$(input).csv"))
 
         @info "Reading data shared across all experiments"
         connection = DBInterface.connect(DuckDB.DB, ":memory:")

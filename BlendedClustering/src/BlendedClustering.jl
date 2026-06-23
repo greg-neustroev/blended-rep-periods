@@ -22,7 +22,7 @@ include("Experiments/Experiments.jl")
 using .Experiments
 
 # Public API (re-exported from the submodules above).
-export ExperimentData, RunData, ExperimentResult
+export ExperimentData, ExperimentResult, read_run_data
 export find_representative_periods, split_into_periods!
 export fit_rep_period_weights!, projected_gradient_descent!, project_onto_simplex
 export read_data_from_dir, save_result_to_csv, save_variables_to_csv

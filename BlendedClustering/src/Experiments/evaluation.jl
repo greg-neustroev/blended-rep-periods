@@ -1,3 +1,13 @@
+"""
+    evaluate_solution!(connection, model, eval_model, period_length, evaluation_type)
+
+Measure the true cost of the clustered solution by solving the full-horizon model
+`eval_model` with the relevant decisions fixed to the values from the clustered
+`model`. `evaluation_type` selects which decisions are fixed:
+
+  - `:investment_regret` fixes the investment decisions (`invested_units`);
+  - `:storage_regret` fixes the inter-period storage levels (`state_of_charge_inter`).
+"""
 function evaluate_solution!(connection, model, eval_model, period_length, evaluation_type)
     n_rep_periods = 1
     raw_period_length = DBInterface.execute(
@@ -45,9 +55,4 @@ function evaluate_solution!(connection, model, eval_model, period_length, evalua
     end
     @info "Solving the evaluation model"
     optimize!(eval_model)
-    # if termination_status(eval_model) == JuMP.INFEASIBLE
-    #     compute_conflict!(eval_model)
-    #     iis_model, reference_map = JuMP.copy_conflict(eval_model)
-    #     print(iis_model)
-    # end
 end

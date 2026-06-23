@@ -10,33 +10,34 @@ using JuMP
 using SparseArrays
 import Tables
 
-export ExperimentData, RunData, ExperimentResult
+export ExperimentData, ExperimentResult, read_run_data
 export ClusteringResult, AuxiliaryClusteringData
 
 
 """
-Data needed to run all of the experiments
+    read_run_data(path) -> DataFrame
+
+Read the experiment configuration at `path` (a CSV with one experiment per row)
+into a `DataFrame`, checking that the required columns are present and converting
+the categorical columns (`clustering_type`, `weight_type`, `evaluation_type`) to
+`Symbol`s.
 """
-struct RunData <: AbstractDataFrame
-    function RunData(path)
-        df = CSV.read(path, DataFrame)
-        # Ensure the DataFrame has the correct column names
-        required_columns = [
-            "n_rep_periods",
-            "period_length",
-            "clustering_type",
-            "weight_type",
-            "niters",
-            "evaluation_type",
-        ] |> Set
-        df_columns = df |> names |> Set
-        if !issubset(required_columns, df_columns)
-            error("Input CSV file is missing required columns: $required_columns")
-        end
-        symbol_columns = [:clustering_type, :weight_type, :evaluation_type]
-        transform!(df, symbol_columns .=> ByRow(Symbol) .=> symbol_columns)
-        return df
+function read_run_data(path)
+    df = CSV.read(path, DataFrame)
+    required_columns = Set([
+        "n_rep_periods",
+        "period_length",
+        "clustering_type",
+        "weight_type",
+        "niters",
+        "evaluation_type",
+    ])
+    if !issubset(required_columns, Set(names(df)))
+        error("Input CSV file is missing required columns: $required_columns")
     end
+    symbol_columns = [:clustering_type, :weight_type, :evaluation_type]
+    transform!(df, symbol_columns .=> ByRow(Symbol) .=> symbol_columns)
+    return df
 end
 
 
@@ -86,10 +87,6 @@ mutable struct AuxiliaryClusteringData
     period_duration::Int
     last_period_duration::Int
     n_periods::Int
-
-    function AuxiliaryClusteringData(key_columns, period_duration, last_period_duration, n_periods)
-        return new(key_columns, period_duration, last_period_duration, n_periods)
-    end
 end
 
 """
@@ -100,15 +97,12 @@ mutable struct ClusteringResult
     weight_matrix::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}
     clustering_matrix::Union{Matrix{Float64},Nothing}
     rp_matrix::Union{Matrix{Float64},Nothing}
-
-    function ClusteringResult(profiles, weight_matrix, clustering_matrix, rp_matrix)
-        return new(profiles, weight_matrix, clustering_matrix, rp_matrix)
-    end
-
-    function ClusteringResult(profiles, weight_matrix)
-        return new(profiles, weight_matrix, nothing, nothing)
-    end
 end
+
+# Convenience constructor: the clustering/representative-period matrices are not
+# always available (e.g. the single-period fast path), so default them to nothing.
+ClusteringResult(profiles, weight_matrix) =
+    ClusteringResult(profiles, weight_matrix, nothing, nothing)
 
 struct ExperimentResult
     name::String

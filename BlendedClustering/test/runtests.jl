@@ -122,7 +122,7 @@ end
         println(io, "n_rep_periods,period_length,clustering_type,weight_type,niters,evaluation_type")
         println(io, "5,24,hull,convex,1000,investment_regret")
       end
-      rd = RunData(path)
+      rd = read_run_data(path)
       @test "distance" ∉ names(rd)
       @test "learning_rate" ∉ names(rd)
       ed = ExperimentData(first(eachrow(rd)), "gep")
