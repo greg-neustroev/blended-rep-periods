@@ -1,46 +1,12 @@
-# Add `coef * other` to `lhs` only when `key` is present in the sparse
-# expression dictionary `d`; absent keys contribute nothing (i.e. read as 0).
-function add_term!(lhs::AffExpr, d::Dict, key, coef::Float64)
-    e = get(d, key, nothing)
-    e === nothing || add_to_expression!(lhs, coef, e)
-    return nothing
-end
-
-# Return `1:n` (a range) when `ids` is exactly the contiguous set `1:n`, so that
-# JuMP's DenseAxisArray indexes that dimension with O(1) arithmetic instead of
-# building a `Dict` and hashing on every lookup. Falls back to `ids` unchanged
-# if it is not contiguous-from-one.
-function as_range(ids::AbstractVector)
-    return ids == eachindex(ids) ? Base.OneTo(length(ids)) : ids
-end
-
 """
-    @timed_step timings key msg begin ... end
+    create_optimization_model!(connection, model, clustering_result) -> Dict{String,Float64}
 
-Log `msg`, run the block, record its duration in `timings[key]`, and fold the
-duration into the log line: on a terminal the in-progress line is replaced with
-`msg (1.234s)`; otherwise the timing is appended on a new line. Like `@elapsed`,
-the block is spliced into the surrounding scope (no new scope), so variables it
-defines remain visible to later steps.
+Build the investment-and-operations problem in `model` from the DuckDB views
+reachable through `connection` and the representative-period weights in
+`clustering_result`. Adds all variables, the objective, and every constraint
+family in place, and returns a dictionary of per-block formulation timings (in
+seconds), including the `"duckdb_queries"` total spent querying DuckDB.
 """
-macro timed_step(timings, key, msg, ex)
-    return quote
-        local _msg = $(esc(msg))
-        @info _msg
-        local _t0 = time_ns()
-        $(esc(ex))
-        local _dt = (time_ns() - _t0) / 1e9
-        $(esc(timings))[$(esc(key))] = _dt
-        if stderr isa Base.TTY
-            print(stderr, "\e[1A\e[2K")          # move up one line and clear it
-            @info "$_msg ($(round(_dt; digits=3))s)"
-        else
-            @info "  ($(round(_dt; digits=3))s)"
-        end
-        _dt
-    end
-end
-
 function create_optimization_model!(connection, model, clustering_result)
     # By default JuMP builds a String name for every variable and constraint
     # (e.g. "power_out[asset,1,4567]"); on the full-horizon models that is
@@ -69,7 +35,8 @@ function create_optimization_model!(connection, model, clustering_result)
         operations_weight = get_scalar(connection, "operations_weight")
         timestep_duration = get_scalar(connection, "timestep_duration")
 
-        # Create indexing sets; we use the same notation as in the paper here
+        # Create indexing sets, named with the usual single-letter set notation
+        # (L lines, A assets, G generators, S storage, C conversion, ...).
         L = get_index_set(connection, "transmission_lines")
         A = get_index_set(connection, "assets")
         A_inv = get_index_set(connection, "investable_assets")
@@ -168,6 +135,10 @@ function create_optimization_model!(connection, model, clustering_result)
         # combinations that actually carry generation/flow get an entry; absent
         # keys are treated as zero by `add_term!` below. This avoids allocating a
         # dense |N|×|X|×|R|×|H| array of (mostly zero) expressions.
+        # Keyed by (location, carrier, rep_period, timestep). The key type is left
+        # abstract on purpose: `location`/`carrier` come straight from the input
+        # data and are dataset-dependent (e.g. integer bus ids in `sienna` vs
+        # string country codes in `tyndp`), so no single concrete tuple type fits.
         total_power_out = Dict{Tuple,AffExpr}()
         total_power_in = Dict{Tuple,AffExpr}()
         total_flow_in = Dict{Tuple,AffExpr}()

@@ -1,41 +1,3 @@
-export read_data_from_dir, save_result_to_csv, save_variables_to_csv
-
-function read_data_from_dir(connection, input_dir)
-    files = glob("*.csv", input_dir)
-    for file_name in files
-        table_name = replace(replace(basename(file_name), r"\.csv$" => ""), "-" => "_")
-        if startswith(table_name, "profiles")
-            # if table name starts with 'profiles', read it as profile data
-            read_profile_data(connection, table_name, file_name)
-        else
-            # otherwise, read it as regular data
-            read_data(connection, table_name, file_name)
-        end
-    end
-
-    create_common_views(connection)
-end
-
-function read_data(connection, table_name, file_pattern)
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE TABLE $table_name
-        AS SELECT *
-        FROM read_csv('$file_pattern', null_padding = true, header = true, union_by_name = true)
-        """
-    )
-end
-
-function read_profile_data(connection, table_name, file_pattern)
-    DBInterface.execute(connection,
-        """
-        CREATE OR REPLACE TABLE $(table_name)_raw
-        AS SELECT *
-        FROM read_csv('$file_pattern', null_padding = true, header = true, union_by_name = true)
-        """
-    )
-end
-
 function create_dummy_rp_profiles_view(connection)
     rp_profiles = DataFrame(
         rep_period=Int[],
@@ -171,16 +133,6 @@ function create_storage_views(connection)
         WHERE NOT is_seasonal
         """
     )
-end
-
-function get_index_set(con, table_name)
-    query = "SELECT DISTINCT id FROM $table_name ORDER BY id"
-    return columns(DBInterface.execute(con, query)).id
-end
-
-function get_scalar(con, scalar_name)
-    query = "SELECT value FROM scalars WHERE scalar = '$scalar_name'"
-    return DBInterface.execute(con, query) |> first |> first
 end
 
 function create_common_views(connection)
@@ -589,86 +541,5 @@ function create_rp_dependent_views(connection)
         ORDER BY
         id, t.rep_period, t.timestep
         """
-    )
-end
-
-function clustering_type_to_method(clustering_type, weight_type)
-    if clustering_type ≡ :hull
-        if weight_type ≡ :conical
-            :conical_hull
-        elseif weight_type ≡ :conical_bounded
-            :convex_hull_with_null
-        else
-            :convex_hull
-        end
-    else
-        clustering_type
-    end
-end
-
-function save_result_to_csv(path::String, result::ExperimentResult, time_to_read::Float64)
-    row = result |> DataFrame
-    row.time_to_read .= time_to_read
-    write_header = !isfile(path)
-    CSV.write(path, row; append=true, writeheader=write_header)
-end
-
-function save_variable_to_csv(
-    model,
-    varname::Symbol,
-    index_names::Vector{Symbol},
-    filename::String,
-    outputs_dir::AbstractString,
-    result_name::AbstractString,
-    seed::Int
-)
-    if JuMP.is_solved_and_feasible(model)
-        subdir = joinpath(outputs_dir, result_name)
-        mkpath(subdir)  # ensure directory exists
-        header = [:id, index_names..., :variable]
-        df = Containers.rowtable(model[varname]; header=header) |> DataFrame
-        if isempty(df)
-            return
-        end
-
-        df.value = value.(df.variable)
-        select!(df, Not(:variable))
-        df.seed .= seed
-        select!(df, Cols(:seed, Not(:seed))) # move seed to the first column
-
-        path = joinpath(subdir, filename)
-        write_header = !isfile(path)
-
-        CSV.write(path, df; append=true, writeheader=write_header)
-    end
-end
-
-function save_variables_to_csv(model, outputs_dir::AbstractString, result_name::AbstractString, seed::Int)
-    save_variable_to_csv(
-        model,
-        :state_of_charge_inter,
-        [:period],
-        "inter_period_storage_values.csv",
-        outputs_dir,
-        result_name,
-        seed
-    )
-    save_variable_to_csv(
-        model,
-        :state_of_charge_intra,
-        [:rep_period, :timestep],
-        "intra_period_storage_values.csv",
-        outputs_dir,
-        result_name,
-        seed
-    )
-    save_variable_to_csv(
-        model,
-        :invested_units,
-        Symbol[],
-        "invested_units.csv",
-        outputs_dir,
-        result_name,
-        seed
     )
 end

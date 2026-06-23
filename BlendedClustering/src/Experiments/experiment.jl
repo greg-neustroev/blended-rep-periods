@@ -1,4 +1,3 @@
-export run_experiment
 
 function run_experiment(
     experiment_data::ExperimentData,

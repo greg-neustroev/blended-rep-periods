@@ -52,8 +52,8 @@ end
   end
 
   @testset "greedy hull cache is sound (cached == uncached)" begin
-    # Lemma 1: the projection-cached run selects exactly the same
-    # representatives, in the same order, as recomputing every projection.
+    # The projection-cached run must select exactly the same representatives,
+    # in the same order, as recomputing every projection from scratch.
     for seed in 1:30
       Random.seed!(seed)
       M = rand(rand(5:18), rand(20:50))
@@ -122,7 +122,7 @@ end
         println(io, "n_rep_periods,period_length,clustering_type,weight_type,niters,evaluation_type")
         println(io, "5,24,hull,convex,1000,investment_regret")
       end
-      rd = RunData(path)
+      rd = read_run_data(path)
       @test "distance" ∉ names(rd)
       @test "learning_rate" ∉ names(rd)
       ed = ExperimentData(first(eachrow(rd)), "gep")

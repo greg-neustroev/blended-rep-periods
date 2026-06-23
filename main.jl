@@ -6,39 +6,9 @@ Pkg.instantiate()
 
 @info "Loading packages"
 using BlendedClustering
-using DuckDB
-using Gurobi
-using JuMP
-using Random
 
-n_random_seeds = 5
-Random.seed!(123)
-seeds = rand(1:1000, n_random_seeds)
-inputs = ["tyndp/gep", "tyndp/p2x", "sienna/5bus", "sienna/118bus", "gridmod/rts",]
-inputs_dir = joinpath(dirname(@__FILE__), "inputs")
-outputs_dir = joinpath(dirname(@__FILE__), "outputs")
-if !isdir(outputs_dir)
-    mkpath(outputs_dir)
-end
-
-for input in inputs
-    @info "Reading experiment configuration"
-    run_data = joinpath(inputs_dir, "$(input).csv") |> RunData
-
-    @info "Reading data shared across all experiments"
-    connection = DBInterface.connect(DuckDB.DB, ":memory:")
-    output_file = joinpath(outputs_dir, "$(input).csv")
-    mkpath(dirname(output_file))
-
-    for seed in seeds
-        time_to_read = @elapsed read_data_from_dir(connection, joinpath(inputs_dir, input))
-        for run_data_row in run_data |> eachrow
-            experiment_data = ExperimentData(run_data_row, input)
-            model = Gurobi.Optimizer |> Model
-            eval_model = Gurobi.Optimizer |> Model
-            result = run_experiment(experiment_data, model, eval_model, connection, seed)
-            save_result_to_csv(output_file, result, time_to_read)
-            save_variables_to_csv(model, outputs_dir, result.name, seed)
-        end
-    end
-end
+# Run the case studies described in `case_studies.toml`. Edit that file to change
+# which datasets, seeds, or solver are used; no code changes required. To run a
+# single experiment interactively instead, call e.g.
+#   run_experiments(["sienna/5bus"]; seeds=[123])
+run_case_studies(joinpath(@__DIR__, "case_studies.toml"))

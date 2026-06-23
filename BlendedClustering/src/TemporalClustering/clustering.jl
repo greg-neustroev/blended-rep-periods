@@ -1,4 +1,3 @@
-export find_representative_periods, split_into_periods!
 
 """
     combine_periods!(df)
@@ -378,11 +377,11 @@ Greedily selects `n_points` columns of `matrix` whose convex hull approximates t
 data. Starting from the column furthest from the column mean (or from
 `initial_indices`, if given), each step adds the column whose Euclidean distance
 to the current hull is largest, where that distance is the residual of the
-projection onto the hull (Algorithm 1). Returns the selected column indices.
+projection onto the hull. Returns the selected column indices.
 
 All distances are Euclidean. When `cache` is `true`, a column's projection
 distance is reused across iterations whenever the obtuse-angle certificate
-guarantees the cached projection is still exact (Lemma 1); `cache=false`
+guarantees the cached projection is still exact; `cache=false`
 recomputes every projection and yields identical results.
 
 # Examples
@@ -421,8 +420,8 @@ function greedy_convex_hull(
   # Cache maps a candidate index d to (q_d, δ_d): its Euclidean projection onto
   # the current hull and the associated distance. After a new representative
   # c_new is added, the cached projection q_d stays exact for the enlarged hull
-  # iff the obtuse-angle certificate (c_d − q_d)ᵀ(c_new − q_d) ≤ 0 holds
-  # (Lemma 1); otherwise it is recomputed.
+  # iff the obtuse-angle certificate (c_d − q_d)ᵀ(c_new − q_d) ≤ 0 holds;
+  # otherwise it is recomputed.
   projection_cache = Dict{Int,Tuple{Vector{Float64},Float64}}()
   starting_index = length(initial_indices) + 1
   for _ ∈ starting_index:n_points
@@ -431,10 +430,10 @@ function greedy_convex_hull(
     hull_matrix = matrix[:, hull_indices]
     projection_matrix = pinv(hull_matrix)
     # Principled PGD step size: 1 / L with L = σ_max(hull_matrix)^2, the
-    # Lipschitz constant of the projection objective's gradient (Proposition 2).
+    # Lipschitz constant of the projection objective's gradient.
     step_size = 1 / opnorm(hull_matrix, 2)^2
     last_added_vector = matrix[:, last(hull_indices)]
-    # Soundness (Lemma 1) requires re-testing EVERY candidate against the newest
+    # Soundness requires re-testing EVERY candidate against the newest
     # representative on EVERY outer iteration; do not skip candidates here.
     for column_index ∈ axes(matrix, 2)
       if column_index ∈ hull_indices
@@ -444,7 +443,7 @@ function greedy_convex_hull(
       cached = get(projection_cache, column_index, nothing)
       if cache && cached !== nothing &&
          dot(target_vector - cached[1], last_added_vector - cached[1]) ≤ 0
-        # Cached projection is still exact for the enlarged hull (Lemma 1).
+        # Cached projection is still exact for the enlarged hull.
         d = cached[2]
       else
         gradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
@@ -660,4 +659,18 @@ function single_period_clustering_result(connection)
   clustering_matrix = ones(1, 1)
   rp_matrix = ones(1, 1)
   return ClusteringResult(rp_df, weight_matrix, clustering_matrix, rp_matrix)
+end
+
+function clustering_type_to_method(clustering_type, weight_type)
+    if clustering_type ≡ :hull
+        if weight_type ≡ :conical
+            :conical_hull
+        elseif weight_type ≡ :conical_bounded
+            :convex_hull_with_null
+        else
+            :convex_hull
+        end
+    else
+        clustering_type
+    end
 end

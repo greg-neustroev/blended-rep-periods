@@ -1,4 +1,3 @@
-export fit_rep_period_weights!, projected_gradient_descent!, project_onto_simplex
 
 """
   project_onto_simplex(vector)
@@ -223,7 +222,7 @@ function fit_rep_period_weights!(
                           moore_penrose_weight_matrix
 
   # Principled PGD step size: 1 / L with L = σ_max(rp_matrix)^2, the Lipschitz
-  # constant of the projection objective's gradient (Proposition 2).
+  # constant of the projection objective's gradient.
   step_size = 1 / opnorm(rp_matrix, 2)^2
 
   for period ∈ 1:n_periods
