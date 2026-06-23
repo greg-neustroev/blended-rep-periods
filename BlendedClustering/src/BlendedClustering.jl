@@ -30,6 +30,6 @@ export run_experiment, run_experiments, run_case_studies
 
 # Internal names exercised by the test suite as `BlendedClustering.<name>`.
 using .TemporalClustering: greedy_convex_hull
-using .Types: DEFAULT_PGD_TOL
+using .Types: DEFAULT_PGD_TOL, DEFAULT_NORMALIZATION
 
 end # module BlendedClustering
