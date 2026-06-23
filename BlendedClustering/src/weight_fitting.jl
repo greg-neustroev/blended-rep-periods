@@ -127,10 +127,9 @@ function projected_gradient_descent!(
   x = projection(x)
 
   for _ ∈ 1:niters
-    g = gradient(x)  # find the gradient
-    α = learning_rate
-    y = x .- α .* g            # gradient step, may leave the domain
-    x_new = projection(y)      # projection step, return to the domain
+    g = gradient(x)              # find the gradient
+    y = x .- learning_rate .* g  # gradient step, may leave the domain
+    x_new = projection(y)        # projection step, return to the domain
 
     diff = maximum(abs.(x_new .- x))  # ‖x_prev − x‖_∞: how much the vector moved
     if diff ≤ tol / niters
