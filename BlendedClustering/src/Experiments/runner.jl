@@ -83,9 +83,9 @@ Run the case studies described by the TOML file at `config_file`. Each entry in
 each are driven by its `<input>.csv` parameter sweep.
 
 Recognised keys: `inputs` (required), `solver`, `inputs_dir`, `outputs_dir`, and
-either an explicit `seeds` array or the trio `master_seed` / `n_seeds` /
-`seed_max` used to draw `n_seeds` reproducible seeds from `1:seed_max`. Relative
-`inputs_dir`/`outputs_dir` are resolved against the config file's directory.
+either an explicit `seeds` array or the pair `master_seed` / `n_seeds` used to draw
+`n_seeds` reproducible seeds. Relative `inputs_dir`/`outputs_dir` are resolved
+against the config file's directory.
 """
 function run_case_studies(config_file::AbstractString)
     config = TOML.parsefile(config_file)
@@ -109,9 +109,8 @@ end
 function draw_seeds(config::AbstractDict)
     master_seed = config["master_seed"]
     n_seeds = config["n_seeds"]
-    seed_max = get(config, "seed_max", 1000)
     Random.seed!(master_seed)
-    return rand(1:seed_max, n_seeds)
+    return rand(1:1_000_000, n_seeds)
 end
 
 # Resolve `path` against `base` unless it is already absolute.
