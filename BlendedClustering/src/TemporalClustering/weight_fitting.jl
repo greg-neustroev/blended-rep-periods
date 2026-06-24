@@ -194,6 +194,7 @@ function fit_rep_period_weights!(
   rp_matrix::Matrix{Float64};
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
+  init::Symbol=:auto,
   diagnostics::Union{Nothing,Dict{Symbol,Any}}=nothing,
 )
   # Determine the appropriate projection method
@@ -239,7 +240,15 @@ function fit_rep_period_weights!(
   # check which is the better initial guess and use it
   default_weight_projection_error = sum((rp_matrix * default_weight_matrix - clustering_matrix) .^ 2)
   moore_penrose_projection_error = sum((rp_matrix * moore_penrose_weight_matrix - clustering_matrix) .^ 2)
-  use_default_init = default_weight_projection_error <= moore_penrose_projection_error
+  # Pick the initial guess. `:auto` keeps the lower-error of the two; `:default`
+  # and `:moore_penrose` force one (used by the sensitivity sweep).
+  use_default_init = if init ≡ :default
+    true
+  elseif init ≡ :moore_penrose
+    false
+  else
+    default_weight_projection_error <= moore_penrose_projection_error
+  end
   initial_weight_matrix = use_default_init ? default_weight_matrix : moore_penrose_weight_matrix
 
   # Principled PGD step size: 1 / L with L = σ_max(rp_matrix)^2, the Lipschitz
@@ -323,6 +332,7 @@ function fit_rep_period_weights!(
   clustering_result::ClusteringResult;
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
+  init::Symbol=:auto,
 )
   fit_rep_period_weights!(
     clustering_result.weight_matrix,
@@ -330,6 +340,7 @@ function fit_rep_period_weights!(
     clustering_result.rp_matrix;
     weight_type,
     tol,
+    init,
     diagnostics=clustering_result.diagnostics,
   )
 end

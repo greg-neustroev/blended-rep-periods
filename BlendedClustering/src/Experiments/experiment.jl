@@ -35,6 +35,7 @@ function run_experiment(
         clustering_result;
         weight_type=experiment_data.weight_type,
         tol=experiment_data.tol,
+        init=experiment_data.init,
     )
 
     projection_errors = clustering_result.rp_matrix * clustering_result.weight_matrix' - clustering_result.clustering_matrix

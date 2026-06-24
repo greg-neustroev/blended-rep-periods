@@ -79,6 +79,7 @@ struct ExperimentData
     tol::Float64
     normalization::Symbol
     cache::Bool
+    init::Symbol
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -91,6 +92,10 @@ struct ExperimentData
         # `cache` toggles the greedy-hull projection cache; optional and on by
         # default. Setting it off is only for the cached-vs-uncached benchmark.
         cache = hasproperty(run_data_row, :cache) ? Bool(run_data_row.cache) : true
+        # `init` forces the PGD weight initialization (`:default` or
+        # `:moore_penrose`); optional, defaulting to `:auto` which keeps the
+        # lower-error guess. Only the sensitivity sweep sets it explicitly.
+        init = hasproperty(run_data_row, :init) ? Symbol(run_data_row.init) : :auto
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -108,6 +113,9 @@ struct ExperimentData
         if !cache
             push!(name_parts, "nocache")
         end
+        if init ≠ :auto
+            push!(name_parts, string(init))
+        end
         name = join(name_parts, "_")
         return new(
             name,
@@ -118,6 +126,7 @@ struct ExperimentData
             tol,
             normalization,
             cache,
+            init,
             run_data_row.evaluation_type
         )
     end
