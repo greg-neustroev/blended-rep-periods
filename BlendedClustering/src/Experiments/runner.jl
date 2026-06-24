@@ -35,14 +35,26 @@ function run_experiments(
         output_file = joinpath(outputs_dir, "$(input).csv")
         mkpath(dirname(output_file))
 
+        # Resume support: skip any (experiment name, seed) already recorded in the
+        # output CSV so an interrupted chain picks up where it left off without
+        # re-solving finished runs. This is most valuable for the single-period
+        # reference, which is expensive and identical across the whole sweep.
+        completed = load_completed_runs(output_file)
+
         # Every configuration is run for every seed. Hull selection and the
         # single-period reference are deterministic, so their regret/selection is
         # identical across seeds — but wall-clock timing is not, so the repeats
         # supply the runtime variance needed for the runtime/Pareto error bars.
         for seed in seeds
+            experiments = [ExperimentData(row, input) for row in eachrow(run_data)]
+            pending = [ed for ed in experiments if (ed.name, seed) ∉ completed]
+            if isempty(pending)
+                @info "All experiments for seed $seed already completed; skipping"
+                continue
+            end
+            # Read the dataset once per seed, but only when something still needs running.
             time_to_read = @elapsed read_data_from_dir(connection, joinpath(inputs_dir, input))
-            for run_data_row in eachrow(run_data)
-                experiment_data = ExperimentData(run_data_row, input)
+            for experiment_data in pending
                 model = Model(optimizer)
                 eval_model = Model(optimizer)
                 result, clustering_result = run_experiment(experiment_data, model, eval_model, connection, seed)
@@ -56,6 +68,7 @@ function run_experiments(
                 # Clustering-side artifacts (weights, assignment, selected RPs,
                 # spectrum, residuals, PGD/cache diagnostics) for offline analysis.
                 save_clustering_artifacts(clustering_result, outputs_dir, result.name, seed)
+                push!(completed, (result.name, seed))
             end
         end
     end
@@ -104,6 +117,22 @@ end
 # Resolve `path` against `base` unless it is already absolute.
 resolve_path(base::AbstractString, path::AbstractString) =
     isabspath(path) ? path : normpath(joinpath(base, path))
+
+# Read the (experiment name, seed) pairs already recorded in `output_file`, so a
+# resumed run can skip them. Each finished experiment appends one such row, so a
+# present (name, seed) means that run completed. Returns an empty set when the
+# file does not exist yet.
+function load_completed_runs(output_file::AbstractString)
+    completed = Set{Tuple{String,Int}}()
+    isfile(output_file) || return completed
+    df = CSV.read(output_file, DataFrame)
+    ("name" in names(df) && "seed" in names(df)) || return completed
+    for row in eachrow(df)
+        (ismissing(row.name) || ismissing(row.seed)) && continue
+        push!(completed, (String(row.name), Int(row.seed)))
+    end
+    return completed
+end
 
 # Record the run environment — Julia/solver/package versions, machine, and the
 # experiments-repo git commit — to `<outputs_dir>/environment.txt` for

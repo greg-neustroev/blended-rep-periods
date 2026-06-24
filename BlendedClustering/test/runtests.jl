@@ -150,6 +150,23 @@ end
     end
   end
 
+  @testset "load_completed_runs (resume support)" begin
+    lcr = BC.Experiments.load_completed_runs
+    mktempdir() do dir
+      f = joinpath(dir, "out.csv")
+      @test isempty(lcr(f))                      # missing file -> nothing completed
+      open(f, "w") do io
+        println(io, "name,seed,objective_value")
+        println(io, "ds_5_24_hull_convex_0.01,123,1.0")
+        println(io, "ds_5_24_hull_convex_0.01,456,2.0")
+      end
+      done = lcr(f)
+      @test ("ds_5_24_hull_convex_0.01", 123) in done
+      @test ("ds_5_24_hull_convex_0.01", 456) in done
+      @test ("ds_5_24_hull_convex_0.01", 999) ∉ done   # un-run seed not skipped
+    end
+  end
+
   @testset "split_into_periods!" begin
     df = DataFrame([:timestep => 1:4, :value => 5:8])
     split_into_periods!(df; period_duration=2)
