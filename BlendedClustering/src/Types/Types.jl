@@ -17,15 +17,30 @@ export ClusteringResult, AuxiliaryClusteringData
 # optional `tol` column: weights are fit and reported only down to this precision.
 const DEFAULT_PGD_TOL = 1e-2
 
+# Default clustering-feature normalization used when a configuration CSV omits the
+# optional `normalization` column. Supported values:
+#   - `:unscaled` (default): the historical behavior — cluster directly on the
+#     dimensionless profiles as stored, where each value is a fraction of the asset's
+#     peak (0 means physically zero, 1 means the peak), with no scaling of its own.
+#   - `:minmax`: rescale each feature row to [0,1] (its minimum across periods → 0,
+#     its maximum → 1). The classic per-feature min-max baseline; it centers (removes
+#     the absolute level), so it is applied only to the clustering features.
+#   - `:economic`: rescale the features into common physical/economic units (peak ×
+#     profile, per-block economic weights), never centered, so zero keeps meaning zero.
+# `:minmax` and `:economic` transform only the selection/weight-fitting space; the
+# representative-period profiles handed to the model stay in the original units.
+const DEFAULT_NORMALIZATION = :unscaled
+
 
 """
     read_run_data(path) -> DataFrame
 
 Read the experiment configuration at `path` (a CSV with one experiment per row)
 into a `DataFrame`, checking that the required columns are present and converting
-the categorical columns (`clustering_type`, `weight_type`, `evaluation_type`) to
-`Symbol`s. The projected gradient descent tolerance column `tol` is optional and
-defaults to `DEFAULT_PGD_TOL` when absent.
+the categorical columns (`clustering_type`, `weight_type`, `evaluation_type`, and
+the optional `normalization`) to `Symbol`s. The projected gradient descent
+tolerance column `tol` is optional and defaults to `DEFAULT_PGD_TOL` when absent;
+the `normalization` column is optional and defaults to `DEFAULT_NORMALIZATION`.
 """
 function read_run_data(path)
     df = CSV.read(path, DataFrame)
@@ -40,6 +55,10 @@ function read_run_data(path)
         error("Input CSV file is missing required columns: $required_columns")
     end
     symbol_columns = [:clustering_type, :weight_type, :evaluation_type]
+    # `normalization` is optional; convert it to a Symbol only when present.
+    if "normalization" in names(df)
+        push!(symbol_columns, :normalization)
+    end
     transform!(df, symbol_columns .=> ByRow(Symbol) .=> symbol_columns)
     return df
 end
@@ -57,22 +76,31 @@ struct ExperimentData
     clustering_type::Symbol
     weight_type::Symbol
     tol::Float64
+    normalization::Symbol
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
         # `tol` (the PGD tolerance ε) is optional; fall back to the default when
         # the configuration CSV does not provide the column.
         tol = hasproperty(run_data_row, :tol) ? Float64(run_data_row.tol) : DEFAULT_PGD_TOL
-        name = join([
-                base_name,
-                run_data_row.n_rep_periods,
-                run_data_row.period_length,
-                string(run_data_row.clustering_type),
-                string(run_data_row.weight_type),
-                tol,
-            ],
-            "_"
-        )
+        # `normalization` is optional and defaults to the historical `:minmax`.
+        normalization = hasproperty(run_data_row, :normalization) ?
+                        Symbol(run_data_row.normalization) : DEFAULT_NORMALIZATION
+        # Keep the experiment name (and thus output paths) unchanged for the
+        # default normalization; only the non-default arm gets a suffix, so the
+        # same RP grid can be run both ways without colliding.
+        name_parts = [
+            base_name,
+            run_data_row.n_rep_periods,
+            run_data_row.period_length,
+            string(run_data_row.clustering_type),
+            string(run_data_row.weight_type),
+            tol,
+        ]
+        if normalization ≠ DEFAULT_NORMALIZATION
+            push!(name_parts, string(normalization))
+        end
+        name = join(name_parts, "_")
         return new(
             name,
             run_data_row.n_rep_periods,
@@ -80,6 +108,7 @@ struct ExperimentData
             run_data_row.clustering_type,
             run_data_row.weight_type,
             tol,
+            normalization,
             run_data_row.evaluation_type
         )
     end

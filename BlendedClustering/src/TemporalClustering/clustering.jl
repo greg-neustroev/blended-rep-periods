@@ -468,6 +468,117 @@ function greedy_convex_hull(
 end
 
 """
+    select_representatives(matrix, n_rp, n_periods, method; tol, args...)
+
+Select `n_rp` representative columns of `matrix` using `method` and assign every
+one of the `n_periods` base periods to a representative. Returns the tuple
+`(rp_matrix, assignments, selected_indices)`:
+
+  - `rp_matrix`: the representative columns (or k-means centroids) in the space
+    of `matrix`;
+  - `assignments`: for each base period, the index of its nearest representative;
+  - `selected_indices`: the column indices chosen as representatives, or `nothing`
+    for `:k_means` (whose representatives are synthetic centroids, not columns).
+
+This is the method dispatch shared by every clustering path. `matrix` is the
+space in which selection and nearest-representative assignment happen; callers
+that cluster in a transformed feature space (e.g. economic normalization) pass
+that space here and reconstruct the output profiles separately.
+"""
+function select_representatives(
+  matrix::AbstractMatrix{Float64},
+  n_rp::Int,
+  n_periods::Int,
+  method::Symbol;
+  tol::Float64=1e-2,
+  args...,
+)
+  if method ≡ :k_means
+    kmeans_result = kmeans(matrix, n_rp; distance=Euclidean(), args...)
+    rp_matrix = kmeans_result.centers
+    assignments = kmeans_result.assignments
+    selected_indices = nothing
+  elseif method ≡ :k_medoids
+    # k-medoids uses distance matrix instead of clustering matrix
+    distance_matrix = pairwise(Euclidean(), matrix; dims=2)
+    kmedoids_result = kmedoids(distance_matrix, n_rp; args...)
+    rp_matrix = matrix[:, kmedoids_result.medoids]
+    assignments = kmedoids_result.assignments
+    selected_indices = kmedoids_result.medoids
+  elseif method ≡ :convex_hull
+    hull_indices = greedy_convex_hull(matrix; n_points=n_rp, tol)
+    rp_matrix = matrix[:, hull_indices]
+    assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    selected_indices = hull_indices
+  elseif method ≡ :convex_hull_with_null
+    # Add a null vector as a column, run the convex-hull method initialized at
+    # it, then drop it; the remaining positive weights sum to at most one.
+    augmented = [zeros(size(matrix, 1), 1) matrix]
+    hull_indices = greedy_convex_hull(augmented; n_points=n_rp + 1, initial_indices=[1], tol)
+    popfirst!(hull_indices)
+    hull_indices .-= 1
+    rp_matrix = matrix[:, hull_indices]
+    assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    selected_indices = hull_indices
+  elseif method ≡ :conical_hull
+    normal_vector = vec(mean(matrix, dims=2))
+    normalize!(normal_vector)
+    projection_coefficients = [1.0 / dot(normal_vector, matrix[:, j]) for j ∈ axes(matrix, 2)]
+    projected_matrix = [matrix[i, j] * projection_coefficients[j] for i ∈ axes(matrix, 1), j ∈ axes(matrix, 2)]
+    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol)
+    rp_matrix = matrix[:, hull_indices]
+    assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    selected_indices = hull_indices
+  else
+    throw(ArgumentError("Clustering method is not supported"))
+  end
+  return rp_matrix, assignments, selected_indices
+end
+
+"""
+    original_space_centroids(matrix, assignments, n_rp)
+
+Recompute the `n_rp` cluster centroids of `matrix` from `assignments` (the column →
+cluster map). Used by the normalized paths to express k-means representatives —
+which are centroids of the *transformed* feature space — back in the original units
+the model needs: the centroid of the original columns of a cluster equals the
+original-space image of that cluster's transformed centroid. Throws on an empty
+cluster rather than emitting an all-zero representative (a fabricated period of zero
+everything), which the unscaled path's `kmeans.centers` would never produce.
+"""
+function original_space_centroids(matrix::AbstractMatrix{Float64}, assignments::AbstractVector{<:Integer}, n_rp::Int)
+  centroids = zeros(size(matrix, 1), n_rp)
+  for k ∈ 1:n_rp
+    members = findall(==(k), assignments)
+    isempty(members) && throw(ArgumentError(
+      "k-means produced an empty cluster ($k of $n_rp) in the normalized selection " *
+      "space, so its representative profile cannot be reconstructed in original units. " *
+      "Use fewer representative periods or a hull/k-medoids method."))
+    centroids[:, k] = vec(mean(view(matrix, :, members), dims=2))
+  end
+  return centroids
+end
+
+"""
+    minmax_rescale(matrix, var_threshold) -> (scaled, keep)
+
+Min-max normalize each row of `matrix` to `[0,1]` (row minimum → 0, row maximum →
+1), dropping rows whose across-period range is `≤ var_threshold` (constant rows
+carry no inter-period information and have no range to rescale — this also avoids a
+0/0). Returns the `scaled` matrix over the kept rows and the `keep` mask. Unlike the
+economic scaling, this is an affine per-row transform: it *centers* (subtracts the
+row minimum), so it is used only for selection/weight fitting, never for the profiles
+returned to the model.
+"""
+function minmax_rescale(matrix::AbstractMatrix{Float64}, var_threshold::Float64)
+  row_min = vec(minimum(matrix, dims=2))
+  row_range = vec(maximum(matrix, dims=2)) .- row_min
+  keep = row_range .> var_threshold
+  scaled = (matrix[keep, :] .- row_min[keep]) ./ row_range[keep]
+  return scaled, keep
+end
+
+"""
   find_representative_periods(
     clustering_data;
     n_rp = 10,
@@ -489,6 +600,21 @@ Finds representative periods via data clustering. All distances are Euclidean.
   - `tol`: the projected gradient descent tolerance `ε` used by the hull methods
     to rank candidate periods by their distance to the current hull (ignored by
     `:k_means`/`:k_medoids`).
+  - `feature_scale`: optional economic normalization. When `nothing` (the default),
+    clustering runs on the dimensionless profiles as-is. When a `Dict` mapping
+    `(asset id, profile_type) => scale`, every feature row is multiplied by its
+    scale and rows that are constant across periods (range `≤ var_threshold`) are
+    dropped *for selection and weight fitting only* — the representative-period
+    profiles returned for the model are always reconstructed in the original,
+    unscaled units (see [`build_economic_feature_scale`](@ref)).
+  - `minmax`: optional per-feature-row min-max normalization. When `true`, each
+    feature row is rescaled to `[0,1]` (its minimum across periods → 0, its maximum
+    → 1) for selection and weight fitting only; the returned profiles stay in the
+    original units. Mutually exclusive with `feature_scale`.
+  - `var_threshold`: drop a feature row from the transformed selection space when
+    its *original dimensionless* profile varies by no more than this across periods
+    (default `0.0`, i.e. drop only exactly-constant rows). Scale-independent, and it
+    also guards the min-max rescale against a 0/0 on a constant row.
   - other named arguments can be provided; they are passed to the clustering method.
 """
 function find_representative_periods(
@@ -497,8 +623,13 @@ function find_representative_periods(
   drop_incomplete_last_period::Bool=false,
   method::Symbol=:k_means,
   tol::Float64=1e-2,
+  feature_scale::Union{Nothing,AbstractDict}=nothing,
+  minmax::Bool=false,
+  var_threshold::Float64=0.0,
   args...,
 )
+  feature_scale ≡ nothing || !minmax ||
+    throw(ArgumentError("feature_scale and minmax normalization are mutually exclusive"))
 
   # Find auxiliary data and pre-compute additional constants that are used multiple times alter
   aux = find_auxiliary_data(clustering_data)
@@ -534,49 +665,41 @@ function find_representative_periods(
     aux.key_columns,
   )
 
-  # 4. Do the clustering, now that the data is transformed into a matrix
-  if method ≡ :k_means
-    # Do the clustering
-    kmeans_result = kmeans(clustering_matrix, n_rp; distance=Euclidean(), args...)
-
-    # Reinterpret the results
-    rp_matrix = kmeans_result.centers
-    assignments = kmeans_result.assignments
-  elseif method ≡ :k_medoids
-    # Do the clustering
-    # k-medoids uses distance matrix instead of clustering matrix
-    distance_matrix = pairwise(Euclidean(), clustering_matrix; dims=2)
-    kmedoids_result = kmedoids(distance_matrix, n_rp; args...)
-
-    # Reinterpret the results
-    rp_matrix = clustering_matrix[:, kmedoids_result.medoids]
-    assignments = kmedoids_result.assignments
-  elseif method ≡ :convex_hull
-    hull_indices = greedy_convex_hull(clustering_matrix; n_points=n_rp, tol)
-
-    rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
-  elseif method ≡ :convex_hull_with_null
-    # Add a null vector as a column, run the convex-hull method initialized at
-    # it, then drop it; the remaining positive weights sum to at most one.
-    matrix = [zeros(size(clustering_matrix, 1), 1) clustering_matrix]
-    hull_indices = greedy_convex_hull(matrix; n_points=n_rp + 1, initial_indices=[1], tol)
-    popfirst!(hull_indices)
-    hull_indices .-= 1
-
-    rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
-  elseif method ≡ :conical_hull
-    normal_vector = vec(mean(clustering_matrix, dims=2))
-    normalize!(normal_vector)
-    projection_coefficients = [1.0 / dot(normal_vector, clustering_matrix[:, j]) for j ∈ axes(clustering_matrix, 2)]
-    projected_matrix = [clustering_matrix[i, j] * projection_coefficients[j] for i ∈ axes(clustering_matrix, 1), j ∈ axes(clustering_matrix, 2)]
-    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol)
-
-    rp_matrix = clustering_matrix[:, hull_indices]
-    assignments = [argmin([norm(clustering_matrix[:, h] - clustering_matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+  # 4. Build the selection space — the features clustering and weight-fitting run
+  # on. `:unscaled` (the default) clusters on the profiles as stored. `:economic`
+  # (a `feature_scale` dict) and `:minmax` instead cluster on a transformed space,
+  # but always reconstruct the representative-period profiles in the original units
+  # the model expects — only the *selection* and the fitted *weights* live in the
+  # transformed space, never the profiles handed to the model.
+  if feature_scale ≡ nothing && !minmax
+    rp_matrix, assignments, _ = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, args...)
+    representative_profiles = rp_matrix
+    selection_matrix = clustering_matrix
   else
-    throw(ArgumentError("Clustering method is not supported"))
+    if feature_scale ≢ nothing
+      # Economic: multiply each row by its (id, profile_type) scale; absolute, never
+      # centered (zero stays physically zero). Drop rows constant across periods —
+      # they carry no inter-period information and bias the origin-anchored conic
+      # hulls; the test uses the *original* variation, so it is scale-independent.
+      scale_vector = economic_scale_vector(feature_scale, keys)
+      row_range = vec(maximum(clustering_matrix, dims=2) .- minimum(clustering_matrix, dims=2))
+      keep = row_range .> var_threshold
+      selection_matrix = (scale_vector .* clustering_matrix)[keep, :]
+    else
+      # Min-max: rescale each row to [0,1] (its minimum across periods → 0, its
+      # maximum → 1). Rows constant across periods have no range to rescale and are
+      # dropped (the same `var_threshold` test, which also avoids a 0/0).
+      selection_matrix, keep = minmax_rescale(clustering_matrix, var_threshold)
+    end
+    rp_matrix, assignments, selected_indices =
+      select_representatives(selection_matrix, n_rp, n_periods, method; tol, args...)
+    # Original-unit representative profiles: the selected period columns for the
+    # hull / k-medoids methods, or the original-space centroids of the transformed
+    # clusters for k-means (whose representatives are synthetic, not columns).
+    representative_profiles = selected_indices ≡ nothing ?
+                              original_space_centroids(clustering_matrix, assignments, n_rp) :
+                              clustering_matrix[:, selected_indices]
+    log_scaled_selection_diagnostics(keys.profile_type, keep, selection_matrix; var_threshold)
   end
 
   # Fill in the weight matrix using the assignments
@@ -588,7 +711,7 @@ function find_representative_periods(
   # 5. Reinterpret the clustering results into a format we need
 
   # First, convert the matrix data back to dataframes using the previously saved key columns
-  rp_df = matrix_and_keys_to_df(rp_matrix, keys)
+  rp_df = matrix_and_keys_to_df(representative_profiles, keys)
 
   # Next, re-append the last period if it was excluded from clustering
   if is_last_period_excluded
@@ -602,7 +725,10 @@ function find_representative_periods(
     )
   end
 
-  return ClusteringResult(rp_df, weight_matrix, clustering_matrix, rp_matrix)
+  # `selection_matrix`/`rp_matrix` are the space weights are fitted in: the original
+  # profiles for `:unscaled` (where `selection_matrix == clustering_matrix`), the
+  # scaled, pruned features for `:economic`.
+  return ClusteringResult(rp_df, weight_matrix, selection_matrix, rp_matrix)
 end
 
 function cluster_using_experiment_data(experiment_data, connection)
@@ -610,37 +736,44 @@ function cluster_using_experiment_data(experiment_data, connection)
   n_rep_periods = experiment_data.n_rep_periods
   clustering_type = experiment_data.clustering_type
   weight_type = experiment_data.weight_type
+  normalization = experiment_data.normalization
 
   # Fast path: when a single representative period is requested and the data
   # already consists of a single period (i.e. the period length covers the
   # whole horizon), clustering is a no-op — the representative period *is* the
   # full profile. Skip the profiles → matrix → k-means → DataFrame round-trip.
-  if n_rep_periods == 1
-    n_periods = DBInterface.execute(
-      connection,
-      "SELECT max(period) AS n FROM profiles"
-    ) |> first |> first
-    if n_periods == 1
-      return single_period_clustering_result(connection)
-    end
+  if n_rep_periods == 1 && count_profile_periods(connection) == 1
+    return single_period_clustering_result(connection)
   end
 
   # Collect the clustering data into a data frame
-  clustering_df = DBInterface.execute(
-    connection,
-    "SELECT * FROM profiles"
-  ) |> DataFrame
+  clustering_df = get_clustering_profiles(connection)
   # Determine the clustering method
   clustering_method = clustering_type_to_method(
     clustering_type,
     weight_type
   )
+  # Select the normalization. `:unscaled` (default) clusters on the profiles as
+  # stored; `:minmax` rescales each feature row to [0,1]; `:economic` builds the
+  # per-feature physical/economic scale and logs the dataset-level diagnostics.
+  feature_scale = nothing
+  minmax = false
+  if normalization ≡ :economic
+    feature_scale, info = build_economic_feature_scale(connection)
+    log_economic_scale_info(info)
+  elseif normalization ≡ :minmax
+    minmax = true
+  elseif normalization ≢ :unscaled
+    throw(ArgumentError("Unsupported normalization $(normalization); expected :unscaled, :minmax, or :economic"))
+  end
   # Perform the clustering
   find_representative_periods(
     clustering_df,
     n_rep_periods;
     method=clustering_method,
     tol=experiment_data.tol,
+    feature_scale,
+    minmax,
     init=:kmcen
   )
 end
@@ -656,10 +789,7 @@ period). The `1×1` `rp_matrix`/`clustering_matrix` make the projection error
 zero and keep `fit_rep_period_weights!` well-defined for every weight type.
 """
 function single_period_clustering_result(connection)
-  rp_df = DBInterface.execute(
-    connection,
-    "SELECT 1 AS rep_period, timestep, id, profile_type, value FROM profiles ORDER BY timestep, id"
-  ) |> DataFrame
+  rp_df = get_single_period_profiles(connection)
   rp_df.rep_period = Int.(rp_df.rep_period)
   weight_matrix = ones(1, 1)
   clustering_matrix = ones(1, 1)
