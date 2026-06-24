@@ -79,6 +79,7 @@ function run_experiment(
         model,
         evaluation_type == :none ? nothing : eval_model,
         final_projection_error,
+        clustering_result,
         time_to_preprocess,
         time_to_cluster,
         time_to_fit_weights,
