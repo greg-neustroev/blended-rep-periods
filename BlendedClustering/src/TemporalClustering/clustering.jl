@@ -539,18 +539,22 @@ end
     original_space_centroids(matrix, assignments, n_rp)
 
 Recompute the `n_rp` cluster centroids of `matrix` from `assignments` (the column →
-cluster map). Used by the economic path to express k-means representatives — which
-are centroids of the *scaled* feature space — back in the original units the model
-needs: the centroid of the original columns of a cluster equals the original-space
-image of that cluster's scaled centroid. An empty cluster yields a zero column.
+cluster map). Used by the normalized paths to express k-means representatives —
+which are centroids of the *transformed* feature space — back in the original units
+the model needs: the centroid of the original columns of a cluster equals the
+original-space image of that cluster's transformed centroid. Throws on an empty
+cluster rather than emitting an all-zero representative (a fabricated period of zero
+everything), which the unscaled path's `kmeans.centers` would never produce.
 """
 function original_space_centroids(matrix::AbstractMatrix{Float64}, assignments::AbstractVector{<:Integer}, n_rp::Int)
   centroids = zeros(size(matrix, 1), n_rp)
   for k ∈ 1:n_rp
     members = findall(==(k), assignments)
-    if !isempty(members)
-      centroids[:, k] = vec(mean(view(matrix, :, members), dims=2))
-    end
+    isempty(members) && throw(ArgumentError(
+      "k-means produced an empty cluster ($k of $n_rp) in the normalized selection " *
+      "space, so its representative profile cannot be reconstructed in original units. " *
+      "Use fewer representative periods or a hull/k-medoids method."))
+    centroids[:, k] = vec(mean(view(matrix, :, members), dims=2))
   end
   return centroids
 end

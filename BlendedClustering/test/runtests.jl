@@ -160,8 +160,8 @@ end
     M = [1.0 2.0 3.0 4.0; 10.0 20.0 30.0 40.0]   # 2 features, 4 periods
     C = TC.original_space_centroids(M, [1, 1, 2, 2], 2)
     @test C ≈ [1.5 3.5; 15.0 35.0]               # per-cluster means of the original columns
-    # An empty cluster yields a zero column rather than NaN.
-    @test TC.original_space_centroids(M, [1, 1, 1, 1], 2)[:, 2] == [0.0, 0.0]
+    # An empty cluster throws rather than emitting a fabricated all-zero representative.
+    @test_throws ArgumentError TC.original_space_centroids(M, [1, 1, 1, 1], 2)
   end
 
   @testset "economic_scale_vector" begin
