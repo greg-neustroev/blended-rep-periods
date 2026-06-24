@@ -508,6 +508,7 @@ function select_representatives(
   n_periods::Int,
   method::Symbol;
   tol::Float64=1e-2,
+  cache::Bool=true,
   stats::Union{Nothing,Dict{Symbol,Any}}=nothing,
   args...,
 )
@@ -524,7 +525,7 @@ function select_representatives(
     assignments = kmedoids_result.assignments
     selected_indices = kmedoids_result.medoids
   elseif method ≡ :convex_hull
-    hull_indices = greedy_convex_hull(matrix; n_points=n_rp, tol, stats)
+    hull_indices = greedy_convex_hull(matrix; n_points=n_rp, tol, cache, stats)
     rp_matrix = matrix[:, hull_indices]
     assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
     selected_indices = hull_indices
@@ -532,7 +533,7 @@ function select_representatives(
     # Add a null vector as a column, run the convex-hull method initialized at
     # it, then drop it; the remaining positive weights sum to at most one.
     augmented = [zeros(size(matrix, 1), 1) matrix]
-    hull_indices = greedy_convex_hull(augmented; n_points=n_rp + 1, initial_indices=[1], tol, stats)
+    hull_indices = greedy_convex_hull(augmented; n_points=n_rp + 1, initial_indices=[1], tol, cache, stats)
     popfirst!(hull_indices)
     hull_indices .-= 1
     rp_matrix = matrix[:, hull_indices]
@@ -543,7 +544,7 @@ function select_representatives(
     normalize!(normal_vector)
     projection_coefficients = [1.0 / dot(normal_vector, matrix[:, j]) for j ∈ axes(matrix, 2)]
     projected_matrix = [matrix[i, j] * projection_coefficients[j] for i ∈ axes(matrix, 1), j ∈ axes(matrix, 2)]
-    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol, stats)
+    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol, cache, stats)
     rp_matrix = matrix[:, hull_indices]
     assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
     selected_indices = hull_indices
@@ -644,6 +645,7 @@ function find_representative_periods(
   feature_scale::Union{Nothing,AbstractDict}=nothing,
   minmax::Bool=false,
   var_threshold::Float64=0.0,
+  cache::Bool=true,
   args...,
 )
   feature_scale ≡ nothing || !minmax ||
@@ -693,7 +695,7 @@ function find_representative_periods(
   # are attached to the returned ClusteringResult.
   selection_stats = Dict{Symbol,Any}()
   if feature_scale ≡ nothing && !minmax
-    rp_matrix, assignments, selected_indices = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, stats=selection_stats, args...)
+    rp_matrix, assignments, selected_indices = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, cache, stats=selection_stats, args...)
     representative_profiles = rp_matrix
     selection_matrix = clustering_matrix
   else
@@ -713,7 +715,7 @@ function find_representative_periods(
       selection_matrix, keep = minmax_rescale(clustering_matrix, var_threshold)
     end
     rp_matrix, assignments, selected_indices =
-      select_representatives(selection_matrix, n_rp, n_periods, method; tol, stats=selection_stats, args...)
+      select_representatives(selection_matrix, n_rp, n_periods, method; tol, cache, stats=selection_stats, args...)
     # Original-unit representative profiles: the selected period columns for the
     # hull / k-medoids methods, or the original-space centroids of the transformed
     # clusters for k-means (whose representatives are synthetic, not columns).
@@ -803,6 +805,7 @@ function cluster_using_experiment_data(experiment_data, connection)
     tol=experiment_data.tol,
     feature_scale,
     minmax,
+    cache=experiment_data.cache,
     init=:kmcen
   )
 end

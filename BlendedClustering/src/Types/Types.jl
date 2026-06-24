@@ -78,6 +78,7 @@ struct ExperimentData
     weight_type::Symbol
     tol::Float64
     normalization::Symbol
+    cache::Bool
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -87,9 +88,12 @@ struct ExperimentData
         # `normalization` is optional and defaults to the historical `:minmax`.
         normalization = hasproperty(run_data_row, :normalization) ?
                         Symbol(run_data_row.normalization) : DEFAULT_NORMALIZATION
+        # `cache` toggles the greedy-hull projection cache; optional and on by
+        # default. Setting it off is only for the cached-vs-uncached benchmark.
+        cache = hasproperty(run_data_row, :cache) ? Bool(run_data_row.cache) : true
         # Keep the experiment name (and thus output paths) unchanged for the
-        # default normalization; only the non-default arm gets a suffix, so the
-        # same RP grid can be run both ways without colliding.
+        # default normalization/cache; only the non-default arms get a suffix, so the
+        # same RP grid can be run several ways without colliding.
         name_parts = [
             base_name,
             run_data_row.n_rep_periods,
@@ -101,6 +105,9 @@ struct ExperimentData
         if normalization ≠ DEFAULT_NORMALIZATION
             push!(name_parts, string(normalization))
         end
+        if !cache
+            push!(name_parts, "nocache")
+        end
         name = join(name_parts, "_")
         return new(
             name,
@@ -110,6 +117,7 @@ struct ExperimentData
             run_data_row.weight_type,
             tol,
             normalization,
+            cache,
             run_data_row.evaluation_type
         )
     end
