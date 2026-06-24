@@ -88,7 +88,11 @@ function create_optimization_model!(connection, model, clustering_result)
         # Operations, spillage and borrow costs are accumulated in a single pass
         # over each (small) cost table, fanning out across (r, h) with
         # `add_to_expression!` so we never materialise an R×H array of terms nor
-        # re-iterate the DuckDB result once per timestep.
+        # re-iterate the DuckDB result once per timestep. Each cost component is a
+        # separately named expression so the objective can be decomposed after the
+        # solve via `value(model[:cost_of_operations])` etc. — kept distinct (rather
+        # than lumped into one `cost_of_operations`) so capex/opex/spillage/ENS can
+        # be reported without re-solving.
         @expression(model, cost_of_operations, AffExpr(0.0))
         operations_cost_data = run_query("SELECT * FROM operations_cost_objective_view")
         for row in rows(operations_cost_data)
@@ -101,30 +105,32 @@ function create_optimization_model!(connection, model, clustering_result)
             end
         end
 
+        @expression(model, cost_of_spillage, AffExpr(0.0))
         spillage_cost_data = run_query("SELECT * FROM spillage_cost_objective_view")
         for row in rows(spillage_cost_data)
             c = row.spillage_cost
             for r in R
                 w = rp_weight[r] * c
                 for h in H
-                    add_to_expression!(cost_of_operations, w, spillage[row.id, r, h])
+                    add_to_expression!(cost_of_spillage, w, spillage[row.id, r, h])
                 end
             end
         end
 
+        @expression(model, cost_of_borrow, AffExpr(0.0))
         borrow_cost_data = run_query("SELECT * FROM borrow_cost_objective_view")
         for row in rows(borrow_cost_data)
             c = row.borrow_cost
             for r in R
                 w = rp_weight[r] * c
                 for h in H
-                    add_to_expression!(cost_of_operations, w, borrow[row.id, r, h])
+                    add_to_expression!(cost_of_borrow, w, borrow[row.id, r, h])
                 end
             end
         end
 
         # Finally, formulate the objective function as the sum of the costs
-        @objective(model, Min, cost_of_investment + cost_of_operations)
+        @objective(model, Min, cost_of_investment + cost_of_operations + cost_of_spillage + cost_of_borrow)
     end
 
     @info "Creating constraints"
