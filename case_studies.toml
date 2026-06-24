@@ -9,7 +9,7 @@ inputs = ["tyndp/gep", "tyndp/p2x", "sienna/5bus", "sienna/118bus", "gridmod/rts
 # i.e. `Random.seed!(master_seed); rand(1:seed_max, n_seeds)`. Set an explicit
 # `seeds = [...]` to use fixed seeds instead of drawing them.
 master_seed = 123
-n_seeds     = 5
+n_seeds     = 10
 seed_max    = 1000
 
 # Optimizer to use (see `BlendedClustering.Experiments.SOLVERS` for supported names).

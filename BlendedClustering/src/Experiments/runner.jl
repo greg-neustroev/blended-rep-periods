@@ -34,6 +34,10 @@ function run_experiments(
         output_file = joinpath(outputs_dir, "$(input).csv")
         mkpath(dirname(output_file))
 
+        # Every configuration is run for every seed. Hull selection and the
+        # single-period reference are deterministic, so their regret/selection is
+        # identical across seeds — but wall-clock timing is not, so the repeats
+        # supply the runtime variance needed for the runtime/Pareto error bars.
         for seed in seeds
             time_to_read = @elapsed read_data_from_dir(connection, joinpath(inputs_dir, input))
             for run_data_row in eachrow(run_data)
