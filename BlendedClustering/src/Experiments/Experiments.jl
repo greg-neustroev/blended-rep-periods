@@ -16,6 +16,7 @@ using DuckDB
 using Gurobi
 using JuMP
 using LinearAlgebra
+using Pkg
 using Random
 using StyledStrings
 using TOML

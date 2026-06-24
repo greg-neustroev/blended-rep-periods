@@ -30,10 +30,15 @@ and `investments`. Profiles are normalized to `[0,1]`; demand/availability/inflo
 are scaled at use by `peak_demand` / `unit_capacity` / `peak_inflow`. All numeric
 values are rounded to three decimals (nothing here is measured more finely).
 
-The config CSV has columns `n_rep_periods, period_length, clustering_type,
-weight_type, niters, evaluation_type`. The first row (`1, <horizon>, …, none`) is
+The config CSV has required columns `n_rep_periods, period_length, clustering_type,
+weight_type, evaluation_type` and optional columns: `tol` (the PGD tolerance ε,
+default `0.01`), `normalization` (`unscaled` (default), `minmax`, or `economic`),
+and `cache` (the greedy-hull projection cache, default `true`; set `false` only for
+the cached-vs-uncached benchmark). `clustering_type` is one of `k_means`,
+`k_medoids`, `hierarchical`, or `hull`. The first row (`1, <horizon>, …, none`) is
 the unclustered reference; the remaining rows sweep clustering/weight types under
-the dataset's regret metric.
+the dataset's regret metric. Each run also records the environment (Julia/solver
+versions, machine, git commit) to `<outputs_dir>/environment.txt`.
 
 ## The datasets
 

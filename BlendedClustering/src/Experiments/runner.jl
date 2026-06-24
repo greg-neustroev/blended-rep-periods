@@ -24,6 +24,7 @@ function run_experiments(
     outputs_dir::AbstractString="outputs",
 )
     isdir(outputs_dir) || mkpath(outputs_dir)
+    record_environment(outputs_dir)
 
     for input in inputs
         @info "Reading experiment configuration"
@@ -103,3 +104,34 @@ end
 # Resolve `path` against `base` unless it is already absolute.
 resolve_path(base::AbstractString, path::AbstractString) =
     isabspath(path) ? path : normpath(joinpath(base, path))
+
+# Record the run environment — Julia/solver/package versions, machine, and the
+# experiments-repo git commit — to `<outputs_dir>/environment.txt` for
+# reproducibility (so reported runtimes are tied to a known machine and code).
+function record_environment(outputs_dir::AbstractString)
+    isdir(outputs_dir) || mkpath(outputs_dir)
+    cpu = isempty(Sys.cpu_info()) ? "unknown" : Sys.cpu_info()[1].model
+    commit = try
+        strip(read(`git -C $(@__DIR__) rev-parse HEAD`, String))
+    catch
+        "unknown"
+    end
+    open(joinpath(outputs_dir, "environment.txt"), "w") do io
+        println(io, "[julia]")
+        println(io, "version = \"", VERSION, "\"")
+        println(io, "\n[system]")
+        println(io, "machine = \"", Sys.MACHINE, "\"")
+        println(io, "cpu = \"", strip(cpu), "\"")
+        println(io, "threads = ", Sys.CPU_THREADS)
+        println(io, "total_memory_gb = ", round(Sys.total_memory() / 2^30; digits=1))
+        println(io, "hostname = \"", gethostname(), "\"")
+        println(io, "\n[git]")
+        println(io, "experiments_commit = \"", commit, "\"")
+        println(io, "\n[packages]")
+        for (_, dep) in Pkg.dependencies()
+            dep.name in ("JuMP", "Gurobi", "DuckDB", "Arrow", "Clustering", "Distances") || continue
+            println(io, dep.name, " = \"", dep.version, "\"")
+        end
+    end
+    return
+end
