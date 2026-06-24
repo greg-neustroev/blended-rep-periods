@@ -3,8 +3,11 @@ using Test
 using Random
 using LinearAlgebra
 using DataFrames
+using DuckDB
+using DuckDB: DBInterface
 
 const BC = BlendedClustering
+const TC = BlendedClustering.TemporalClustering
 
 # A tall synthetic clustering frame: (n_timesteps * length(assets)) features per
 # period, kept larger than the RP count so the weight-fitting matrices stay
@@ -151,6 +154,126 @@ end
     split_into_periods!(df; period_duration=2)
     @test df.period == [1, 1, 2, 2]
     @test df.timestep == [1, 2, 1, 2]
+  end
+
+  @testset "original_space_centroids" begin
+    M = [1.0 2.0 3.0 4.0; 10.0 20.0 30.0 40.0]   # 2 features, 4 periods
+    C = TC.original_space_centroids(M, [1, 1, 2, 2], 2)
+    @test C ≈ [1.5 3.5; 15.0 35.0]               # per-cluster means of the original columns
+    # An empty cluster yields a zero column rather than NaN.
+    @test TC.original_space_centroids(M, [1, 1, 1, 1], 2)[:, 2] == [0.0, 0.0]
+  end
+
+  @testset "economic_scale_vector" begin
+    keys = DataFrame(
+      timestep=[1, 2, 1], id=["A", "A", "B"], profile_type=["demand", "demand", "availability"])
+    fs = Dict(("A", "demand") => 2.0, ("B", "availability") => 3.0)
+    @test TC.economic_scale_vector(fs, keys) == [2.0, 2.0, 3.0]
+    # A feature with no scale entry is an error, not a silent guess.
+    @test_throws ErrorException TC.economic_scale_vector(Dict(("A", "demand") => 2.0), keys)
+  end
+
+  # A clustering frame in the (id, profile_type) layout the economic path expects.
+  function econ_clustering_df(; n_periods=12, n_timesteps=3, seed=0, constant_block=false)
+    Random.seed!(seed)
+    rows = NamedTuple[]
+    for p in 1:n_periods, t in 1:n_timesteps
+      push!(rows, (period=p, timestep=t, id="A", profile_type="demand", value=rand()))
+      push!(rows, (period=p, timestep=t, id="B", profile_type="availability", value=rand()))
+      if constant_block
+        # "C" is identical in every period (constant across columns) -> droppable.
+        push!(rows, (period=p, timestep=t, id="C", profile_type="availability", value=0.5))
+      end
+    end
+    DataFrame(rows)
+  end
+
+  @testset "economic path: uniform scaling leaves selection invariant, profiles in original units" begin
+    df = econ_clustering_df(seed=11)
+    fs = Dict(("A", "demand") => 3.0, ("B", "availability") => 3.0)   # one global scalar
+    for m in (:convex_hull, :k_medoids, :conical_hull)
+      # Reseed so the randomized methods (k_medoids) start from the same state;
+      # the invariance is about the scaling, not the RNG.
+      Random.seed!(5); base = find_representative_periods(df, 4; method=m)
+      Random.seed!(5); econ = find_representative_periods(df, 4; method=m, feature_scale=fs)
+      # Same representatives chosen, and profiles stay in the original units (a global
+      # scalar cannot change the geometry, so the selected period profiles are identical).
+      @test isequal(base.profiles, econ.profiles)
+      # The space weights are fitted in is the scaled feature space (×3 on every entry).
+      @test econ.clustering_matrix ≈ 3.0 .* base.clustering_matrix
+    end
+  end
+
+  @testset "economic path: constant feature rows are dropped from selection but kept in profiles" begin
+    df = econ_clustering_df(seed=12, constant_block=true)
+    fs = Dict(("A", "demand") => 2.0, ("B", "availability") => 2.0, ("C", "availability") => 2.0)
+    base = find_representative_periods(df, 3; method=:convex_hull)
+    econ = find_representative_periods(df, 3; method=:convex_hull, feature_scale=fs, var_threshold=0.0)
+    # The constant "C" rows (one per timestep) are pruned from the scaled selection space.
+    n_timesteps = 3
+    @test size(econ.clustering_matrix, 1) == size(base.clustering_matrix, 1) - n_timesteps
+    # But the representative profiles still carry every asset, including "C".
+    @test "C" in econ.profiles.id
+    @test Set(econ.profiles.id) == Set(base.profiles.id)
+  end
+
+  # Register a DataFrame as a DuckDB view, so build_economic_feature_scale can query it.
+  reg!(conn, df, name) = DuckDB.register_data_frame(conn, df, name)
+
+  function economic_scale_fixture(; is_investment, τ=1.0, initial_units=2, investment_ids=["g1", "g2"])
+    conn = DBInterface.connect(DuckDB.DB, ":memory:")
+    reg!(conn, DataFrame(scalar=["timestep_duration"], value=[τ]), "scalars")
+    reg!(conn, DataFrame(
+        asset=["d1", "g1", "g2", "s1"],
+        profile_type=["demand", "availability", "availability", "inflows"]), "assets_profiles")
+    reg!(conn, DataFrame(id=["d1"], peak_demand=[100.0]), "demand")
+    reg!(conn, DataFrame(id=["s1"], peak_inflow=[50.0]), "assets_storage_seasonal")
+    reg!(conn, DataFrame(
+        id=["g1", "g2"], technology=["Wind", "Sun"],
+        unit_capacity=[10.0, 5.0], initial_units=[initial_units, initial_units]), "assets")
+    # ENS is a high-cost slack and must not set V̄.
+    reg!(conn, DataFrame(
+        technology=["ENS", "Wind", "Sun", "Gas"], variable_cost=[1000.0, 2.0, 0.0, 5.0]),
+      "generation_assets")
+    if is_investment
+        costs = Dict("g1" => 20.0, "g2" => 8.0)
+        reg!(conn, DataFrame(id=investment_ids, cost=[costs[i] for i in investment_ids]), "investments")
+        reg!(conn, DataFrame(id=investment_ids), "investable_assets")
+    else
+        reg!(conn, DataFrame(id=String[], cost=Float64[]), "investments")
+        reg!(conn, DataFrame(id=String[]), "investable_assets")
+    end
+    return conn
+  end
+
+  @testset "build_economic_feature_scale: investment regime (V̄ excludes ENS, κ_g)" begin
+    conn = economic_scale_fixture(is_investment=true, τ=1.0)
+    scale, info = TC.build_economic_feature_scale(conn)
+    @test info.regime == :investment
+    @test info.reference_operational_cost == 5.0                  # max(Wind 2, Sun 0, Gas 5); ENS 1000 excluded
+    # demand carries V̄·τ; availability is capital I_g·P_g; inflow carries V̄.
+    @test scale[("d1", "demand")] ≈ 5.0 * 1.0 * 100.0
+    @test scale[("g1", "availability")] ≈ 20.0 * 10.0            # I_g · unit_capacity
+    @test scale[("g2", "availability")] ≈ 8.0 * 5.0
+    @test scale[("s1", "inflows")] ≈ 5.0 * 50.0                  # w_E = V̄
+    @test info.capital_to_operational_ratio_by_tech["Wind"] ≈ 20.0 / (5.0 * 1.0)
+  end
+
+  @testset "build_economic_feature_scale: operations regime (price-free, τ on power blocks)" begin
+    conn = economic_scale_fixture(is_investment=false, τ=2.0, initial_units=2)
+    scale, info = TC.build_economic_feature_scale(conn)
+    @test info.regime == :operations
+    @test isnan(info.reference_operational_cost)                 # V̄ not used in operations
+    @test scale[("d1", "demand")] ≈ 2.0 * 100.0                  # τ · peak_demand
+    @test scale[("g1", "availability")] ≈ 2.0 * 10.0 * 2.0       # τ · unit_capacity · initial_units
+    @test scale[("s1", "inflows")] ≈ 50.0                        # inflow is already energy: no τ
+  end
+
+  @testset "build_economic_feature_scale: halts on a missing parameter" begin
+    # g2 carries an availability profile but has no investment cost I_g in the
+    # investment regime, so the scale cannot be built and the function must throw.
+    conn = economic_scale_fixture(is_investment=true, τ=1.0, investment_ids=["g1"])
+    @test_throws ErrorException TC.build_economic_feature_scale(conn)
   end
 
 end
