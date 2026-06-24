@@ -536,6 +536,26 @@ function select_representatives(
 end
 
 """
+    original_space_centroids(matrix, assignments, n_rp)
+
+Recompute the `n_rp` cluster centroids of `matrix` from `assignments` (the column →
+cluster map). Used by the economic path to express k-means representatives — which
+are centroids of the *scaled* feature space — back in the original units the model
+needs: the centroid of the original columns of a cluster equals the original-space
+image of that cluster's scaled centroid. An empty cluster yields a zero column.
+"""
+function original_space_centroids(matrix::AbstractMatrix{Float64}, assignments::AbstractVector{<:Integer}, n_rp::Int)
+  centroids = zeros(size(matrix, 1), n_rp)
+  for k ∈ 1:n_rp
+    members = findall(==(k), assignments)
+    if !isempty(members)
+      centroids[:, k] = vec(mean(view(matrix, :, members), dims=2))
+    end
+  end
+  return centroids
+end
+
+"""
   find_representative_periods(
     clustering_data;
     n_rp = 10,
@@ -557,6 +577,16 @@ Finds representative periods via data clustering. All distances are Euclidean.
   - `tol`: the projected gradient descent tolerance `ε` used by the hull methods
     to rank candidate periods by their distance to the current hull (ignored by
     `:k_means`/`:k_medoids`).
+  - `feature_scale`: optional economic normalization. When `nothing` (the default),
+    clustering runs on the dimensionless profiles as-is. When a `Dict` mapping
+    `(asset id, profile_type) => scale`, every feature row is multiplied by its
+    scale and rows that are constant across periods (range `≤ var_threshold`) are
+    dropped *for selection and weight fitting only* — the representative-period
+    profiles returned for the model are always reconstructed in the original,
+    unscaled units (see [`build_economic_feature_scale`](@ref)).
+  - `var_threshold`: drop a feature row from the scaled selection space when its
+    *original dimensionless* profile varies by no more than this across periods
+    (default `0.0`, i.e. drop only exactly-constant rows). Scale-independent.
   - other named arguments can be provided; they are passed to the clustering method.
 """
 function find_representative_periods(
@@ -565,6 +595,8 @@ function find_representative_periods(
   drop_incomplete_last_period::Bool=false,
   method::Symbol=:k_means,
   tol::Float64=1e-2,
+  feature_scale::Union{Nothing,AbstractDict}=nothing,
+  var_threshold::Float64=0.0,
   args...,
 )
 
@@ -602,8 +634,34 @@ function find_representative_periods(
     aux.key_columns,
   )
 
-  # 4. Do the clustering, now that the data is transformed into a matrix
-  rp_matrix, assignments, _ = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, args...)
+  # 4. Do the clustering, now that the data is transformed into a matrix.
+  if feature_scale ≡ nothing
+    # Default (:unscaled) path: select directly on the profiles as stored, and the
+    # representatives are already in the units the model expects.
+    rp_matrix, assignments, _ = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, args...)
+    representative_profiles = rp_matrix
+    selection_matrix = clustering_matrix
+  else
+    # Economic path: select and fit weights in the scaled feature space, but
+    # reconstruct the representative-period profiles in the original units (the
+    # model always needs the dimensionless [0,1] profiles, not the scaled ones).
+    scale_vector = economic_scale_vector(feature_scale, keys)
+    # Drop rows that are constant across periods: they carry no inter-period
+    # information and bias the origin-anchored conic hulls. The test uses the
+    # *original* profile variation, so it is independent of the scaling.
+    row_range = vec(maximum(clustering_matrix, dims=2) .- minimum(clustering_matrix, dims=2))
+    keep = row_range .> var_threshold
+    selection_matrix = (scale_vector .* clustering_matrix)[keep, :]
+    rp_matrix, assignments, selected_indices =
+      select_representatives(selection_matrix, n_rp, n_periods, method; tol, args...)
+    # Original-unit representative profiles: the selected period columns for the
+    # hull / k-medoids methods, or the original-space centroids of the scaled-space
+    # clusters for k-means (whose representatives are synthetic, not columns).
+    representative_profiles = selected_indices ≡ nothing ?
+                              original_space_centroids(clustering_matrix, assignments, n_rp) :
+                              clustering_matrix[:, selected_indices]
+    log_scaled_selection_diagnostics(keys.profile_type, keep, selection_matrix; var_threshold)
+  end
 
   # Fill in the weight matrix using the assignments
 
@@ -614,7 +672,7 @@ function find_representative_periods(
   # 5. Reinterpret the clustering results into a format we need
 
   # First, convert the matrix data back to dataframes using the previously saved key columns
-  rp_df = matrix_and_keys_to_df(rp_matrix, keys)
+  rp_df = matrix_and_keys_to_df(representative_profiles, keys)
 
   # Next, re-append the last period if it was excluded from clustering
   if is_last_period_excluded
@@ -628,7 +686,10 @@ function find_representative_periods(
     )
   end
 
-  return ClusteringResult(rp_df, weight_matrix, clustering_matrix, rp_matrix)
+  # `selection_matrix`/`rp_matrix` are the space weights are fitted in: the original
+  # profiles for `:unscaled` (where `selection_matrix == clustering_matrix`), the
+  # scaled, pruned features for `:economic`.
+  return ClusteringResult(rp_df, weight_matrix, selection_matrix, rp_matrix)
 end
 
 function cluster_using_experiment_data(experiment_data, connection)
@@ -636,37 +697,39 @@ function cluster_using_experiment_data(experiment_data, connection)
   n_rep_periods = experiment_data.n_rep_periods
   clustering_type = experiment_data.clustering_type
   weight_type = experiment_data.weight_type
+  normalization = experiment_data.normalization
 
   # Fast path: when a single representative period is requested and the data
   # already consists of a single period (i.e. the period length covers the
   # whole horizon), clustering is a no-op — the representative period *is* the
   # full profile. Skip the profiles → matrix → k-means → DataFrame round-trip.
-  if n_rep_periods == 1
-    n_periods = DBInterface.execute(
-      connection,
-      "SELECT max(period) AS n FROM profiles"
-    ) |> first |> first
-    if n_periods == 1
-      return single_period_clustering_result(connection)
-    end
+  if n_rep_periods == 1 && count_profile_periods(connection) == 1
+    return single_period_clustering_result(connection)
   end
 
   # Collect the clustering data into a data frame
-  clustering_df = DBInterface.execute(
-    connection,
-    "SELECT * FROM profiles"
-  ) |> DataFrame
+  clustering_df = get_clustering_profiles(connection)
   # Determine the clustering method
   clustering_method = clustering_type_to_method(
     clustering_type,
     weight_type
   )
+  # Under economic normalization, build the per-feature scale from the parameter
+  # inputs and log the dataset-level diagnostics; `:unscaled` leaves it `nothing`.
+  feature_scale = nothing
+  if normalization ≡ :economic
+    feature_scale, info = build_economic_feature_scale(connection)
+    log_economic_scale_info(info)
+  elseif normalization ≢ :unscaled
+    throw(ArgumentError("Unsupported normalization $(normalization); expected :unscaled or :economic"))
+  end
   # Perform the clustering
   find_representative_periods(
     clustering_df,
     n_rep_periods;
     method=clustering_method,
     tol=experiment_data.tol,
+    feature_scale,
     init=:kmcen
   )
 end
@@ -682,10 +745,7 @@ period). The `1×1` `rp_matrix`/`clustering_matrix` make the projection error
 zero and keep `fit_rep_period_weights!` well-defined for every weight type.
 """
 function single_period_clustering_result(connection)
-  rp_df = DBInterface.execute(
-    connection,
-    "SELECT 1 AS rep_period, timestep, id, profile_type, value FROM profiles ORDER BY timestep, id"
-  ) |> DataFrame
+  rp_df = get_single_period_profiles(connection)
   rp_df.rep_period = Int.(rp_df.rep_period)
   weight_matrix = ones(1, 1)
   clustering_matrix = ones(1, 1)
