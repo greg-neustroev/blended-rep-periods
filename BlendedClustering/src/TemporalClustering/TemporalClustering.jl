@@ -8,7 +8,7 @@ module TemporalClustering
 using ..Types
 using ..Database  # data-access layer: all DuckDB queries live here, not in this module
 
-using Clustering: kmeans, kmedoids   # restrict import: Clustering also exports `ClusteringResult`, which would clash with `Types.ClusteringResult`
+using Clustering: kmeans, kmedoids, hclust, cutree   # restrict import: Clustering also exports `ClusteringResult`, which would clash with `Types.ClusteringResult`
 using DataFrames
 using Distances
 using LinearAlgebra

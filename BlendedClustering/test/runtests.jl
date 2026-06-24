@@ -82,7 +82,7 @@ end
 
   @testset "find_representative_periods: every method" begin
     df = synthetic_clustering_df(seed=3)
-    for m in (:k_means, :k_medoids, :convex_hull, :convex_hull_with_null, :conical_hull)
+    for m in (:k_means, :k_medoids, :hierarchical, :convex_hull, :convex_hull_with_null, :conical_hull)
       res = find_representative_periods(df, 3; method=m)
       @test size(res.rp_matrix, 2) == 3
       @test size(res.weight_matrix, 2) == 3

@@ -524,6 +524,19 @@ function select_representatives(
     rp_matrix = matrix[:, kmedoids_result.medoids]
     assignments = kmedoids_result.assignments
     selected_indices = kmedoids_result.medoids
+  elseif method ≡ :hierarchical
+    # Agglomerative (Ward) clustering on the same Euclidean distances as
+    # k-medoids; each cluster's representative is its medoid (the member nearest
+    # the rest), so the representatives are real periods like the k-medoids/hull ones.
+    distance_matrix = pairwise(Euclidean(), matrix; dims=2)
+    assignments = cutree(hclust(distance_matrix; linkage=:ward); k=n_rp)
+    medoids = Vector{Int}(undef, n_rp)
+    for c ∈ 1:n_rp
+      members = findall(==(c), assignments)
+      medoids[c] = members[argmin([sum(@view distance_matrix[m, members]) for m ∈ members])]
+    end
+    rp_matrix = matrix[:, medoids]
+    selected_indices = medoids
   elseif method ≡ :convex_hull
     hull_indices = greedy_convex_hull(matrix; n_points=n_rp, tol, cache, stats)
     rp_matrix = matrix[:, hull_indices]
