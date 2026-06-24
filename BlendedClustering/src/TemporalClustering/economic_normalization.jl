@@ -3,37 +3,42 @@
 # Under `normalization = :economic`, the dimensionless [0,1] profiles are rescaled
 # into common physical/economic units before clustering, instead of being clustered
 # as-is (the `:unscaled` default). Each profile value is a fraction of its asset's
-# peak (0 = physically zero, 1 = peak); the absolute feature is `cap · profile`,
-# carrying a per-block economic weight. Features are never centered, so a zero
+# peak (0 = physically zero, 1 = peak). Features are never centered, so a zero
 # profile value stays physically zero — the correct semantics for the origin-anchored
 # conic / sub-unit-conic hulls.
 #
-# Per-block weights, in a common energy/cost unit. Demand and availability are
-# *powers*, so they acquire the timestep duration τ to become per-step energy;
-# inflow is *already* per-step energy (it enters the storage balance without ×τ),
-# so it does not. The reference operational cost V̄ (= max variable_cost over real,
-# non-slack generators) converts energy to operating cost:
+# THE FEATURE SPACE IS ENERGY. Every feature is the energy delivered/available over
+# one time step (MWh), so the space is dimensionally homogeneous and there is no
+# power-vs-energy reconciliation between blocks. Demand and availability are powers,
+# so they are converted to per-step energy by the step duration τ; inflow is already
+# per-step energy (it enters the storage balance without ×τ), so it carries no τ:
 #
-#   demand:        w_D = V̄·τ      scale = w_D · peak_demand
-#   availability:  w_A = V̄·τ      scale = w_A · (unit_capacity · initial_units)   [operations]
-#   inflow:        w_E = V̄        scale = w_E · peak_inflow
+#   demand_energy        = τ · peak_demand · profile        (MWh)
+#   availability_energy  = τ · cap_g · profile              (MWh)   [operations]
+#   inflow_energy        = peak_inflow · profile            (MWh)   [already energy]
 #
-# In the *operations-with-storage* regime (no investable assets, e.g. P2X / 5bus)
-# V̄ is common to all three blocks and cancels, leaving the price-free weights
-# [τ, τ, 1]. In the *investment* regime (capacity is a decision variable, e.g. GEP)
-# the availability block is instead valued by annualized capital I_g (per-unit-of-
-# capacity investment cost) — a quantity dimensionally separate from operating cost,
-# carrying neither V̄ nor τ:
+# Energy is then weighted by marginal operating value V̄ (€/MWh) — a single scalar
+# across all three blocks, with NO τ in the weighting (τ lives inside the features).
 #
-#   demand:        scale = V̄·τ · peak_demand
-#   inflow:        scale = V̄   · peak_inflow
-#   availability:  scale = I_g  · unit_capacity        (= capital value of the capacity)
+#   - Operations regime (no investable assets, e.g. P2X / 5bus): V̄ is common to all
+#     blocks and cancels, leaving a price-free, parameter-free normalization. τ is a
+#     global scalar over the whole (energy) feature space, so it cancels too.
+#   - Investment regime (capacity is a decision variable, e.g. GEP): demand/inflow are
+#     valued by operating cost V̄ (× their energy); availability is instead valued by
+#     annualized capital I_g (€/MW·yr), which prices *capacity* (power), so it is NOT
+#     converted to energy and carries no τ:
 #
-# The single cross-block ratio that then governs availability-vs-demand is
-# κ_g = I_g / (V̄·τ) (reported per technology as a diagnostic). Note τ is a *global*
-# scalar wherever there is no inflow block (e.g. GEP), so it has no effect on
-# clustering there; it only reweights blocks when an energy inflow block coexists
-# with power blocks under τ ≠ 1 (e.g. RTS).
+#       demand:        scale = V̄ · (τ · peak_demand)
+#       inflow:        scale = V̄ · peak_inflow
+#       availability:  scale = I_g · unit_capacity        (capital × capacity)
+#
+# Pulling out the common V̄ leaves a single cross-block ratio governing availability
+# vs. demand: κ_g = I_g / (V̄·τ). Here τ is NOT a unit reconciliation — it is the
+# annualization reconciling capital (€/MW·yr) against per-step operating value
+# (€/MWh·step), the same annualization the objective uses for operations weighting.
+# So τ appears in exactly one place with a clear economic meaning, never as a free-
+# floating power/energy fudge. This makes the normalization robust to τ ≠ 1 (e.g.
+# RTS) with no guard, because the feature space is energy by construction.
 
 # Generation "technologies" that are feasibility/penalty slacks (energy-not-served /
 # value-of-lost-load), not real supply. They are excluded from the reference
@@ -101,29 +106,35 @@ function build_economic_feature_scale(connection)
                   "V̄ = $reference_operational_cost ≤ 0.")
     end
 
-    # ---- demand block (power → carries τ): scale = w_D · peak_demand -----------
-    demand_weight = is_investment ? reference_operational_cost * τ : τ
+    # Marginal operating value V̄ (€/MWh): the single weight on every energy block.
+    # In the investment regime it is the real-generator reference cost; in operations
+    # it is common to all blocks and cancels, so we use 1 (a parameter-free
+    # normalization). τ is NOT a weight — it lives inside the energy features below.
+    operating_value = is_investment ? reference_operational_cost : 1.0
+
+    # ---- demand block: energy = τ · peak_demand · profile, valued at V̄ ----------
     for r in eachrow(data.demand)
         if ismissing(r.peak)
             push!(missing_params, "demand asset $(r.id) has no peak_demand")
         else
-            scale[(String(r.id), "demand")] = demand_weight * Float64(r.peak)
+            scale[(String(r.id), "demand")] = operating_value * τ * Float64(r.peak)
         end
     end
 
-    # ---- inflow block (already energy → no τ): scale = w_E · peak_inflow -------
-    inflow_weight = is_investment ? reference_operational_cost : 1.0
+    # ---- inflow block: already per-step energy (no τ), valued at V̄ --------------
     for r in eachrow(data.inflow)
         if ismissing(r.peak)
             push!(missing_params, "inflow asset $(r.id) has no peak_inflow")
         else
-            scale[(String(r.id), "inflows")] = inflow_weight * Float64(r.peak)
+            scale[(String(r.id), "inflows")] = operating_value * Float64(r.peak)
         end
     end
 
-    # ---- availability block (power) --------------------------------------------
-    # investment: scale = I_g · unit_capacity (capital value; no V̄, no τ).
-    # operations: scale = τ · unit_capacity · initial_units (w_A = τ).
+    # ---- availability block -----------------------------------------------------
+    # operations: operational energy = τ · (unit_capacity · initial_units) · profile,
+    #             valued at V̄ (cancels) — same energy basis as demand/inflow.
+    # investment: valued by annualized capital I_g (€/MW·yr), which prices *capacity*
+    #             (power), so it is NOT converted to energy and carries no τ.
     capital_to_operational_ratio_by_tech = Dict{String,Float64}()
     for r in eachrow(data.availability)
         if is_investment
@@ -134,30 +145,20 @@ function build_economic_feature_scale(connection)
                 continue
             end
             scale[(String(r.id), "availability")] = Float64(r.cost) * Float64(r.unit_capacity)
-            # κ_g = I_g / (V̄·τ): dimensionless capital-to-operational ratio governing
-            # the availability-vs-demand balance (the one economic number GEP depends on).
+            # κ_g = I_g / (V̄·τ): the lone cross-block ratio. τ here is the annualization
+            # reconciling capital (€/MW·yr) with per-step operating value (€/MWh·step) —
+            # not a power/energy reconciliation (the feature space is energy throughout).
             capital_to_operational_ratio_by_tech[String(r.technology)] =
                 Float64(r.cost) / (reference_operational_cost * τ)
         else
             scale[(String(r.id), "availability")] =
-                τ * Float64(r.unit_capacity) * Float64(r.initial_units)
+                operating_value * τ * Float64(r.unit_capacity) * Float64(r.initial_units)
         end
     end
 
     if !isempty(missing_params)
         error("Economic normalization cannot proceed; missing parameters:\n  - " *
               join(missing_params, "\n  - "))
-    end
-
-    # τ guard: power blocks carry τ, inflow does not. Inert at τ = 1; at τ ≠ 1 it
-    # down-weights the power blocks relative to the energy inflow block. That is
-    # correct only if the inflow peak is per-timestep energy (it enters the storage
-    # balance without ×τ) — flag for verification on τ ≠ 1 data rather than patching.
-    has_inflow = nrow(data.inflow) > 0
-    if τ ≠ 1 && has_inflow
-        @warn "Economic normalization: τ = $τ ≠ 1 with an inflow block. τ is applied " *
-              "to the power blocks (demand, availability) but not to inflow, which is " *
-              "treated as per-timestep energy. Verify the inflow peak units for this dataset."
     end
 
     info = (
@@ -167,7 +168,7 @@ function build_economic_feature_scale(connection)
         reference_operational_cost_avg = reference_operational_cost_avg,
         slack_technologies = SLACK_GENERATION_TECHNOLOGIES,
         capital_to_operational_ratio_by_tech = capital_to_operational_ratio_by_tech,
-        has_inflow = has_inflow,
+        has_inflow = nrow(data.inflow) > 0,
     )
     return scale, info
 end
