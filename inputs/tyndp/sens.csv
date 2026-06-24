@@ -1,0 +1,14 @@
+n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,init
+1,8760,k_means,dirac,0.01,none,auto
+20,24,hull,convex,0.1,storage_regret,auto
+20,24,hull,convex,0.01,storage_regret,auto
+20,24,hull,convex,0.001,storage_regret,auto
+20,24,hull,convex,0.0001,storage_regret,auto
+20,24,hull,convex,0.00001,storage_regret,auto
+40,24,hull,convex,0.1,storage_regret,auto
+40,24,hull,convex,0.01,storage_regret,auto
+40,24,hull,convex,0.001,storage_regret,auto
+40,24,hull,convex,0.0001,storage_regret,auto
+40,24,hull,convex,0.00001,storage_regret,auto
+40,24,hull,convex,0.01,storage_regret,default
+40,24,hull,convex,0.01,storage_regret,moore_penrose

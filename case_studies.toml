@@ -3,7 +3,7 @@
 # Each entry in `inputs` is a case study: a dataset directory under `inputs_dir`
 # with a matching `<input>.csv` file listing that case study's per-experiment
 # parameter sweep (one experiment per row).
-inputs = ["tyndp/gep", "tyndp/p2x", "tyndp/p2x_sep", "sienna/5bus", "sienna/118bus", "gridmod/rts"]
+inputs = ["tyndp/gep", "tyndp/p2x", "tyndp/sep", "tyndp/sens", "sienna/5bus", "sienna/118bus", "gridmod/rts"]
 
 # Random seeds. `n_seeds` values are drawn from `1:seed_max` using `master_seed`,
 # i.e. `Random.seed!(master_seed); rand(1:seed_max, n_seeds)`. Set an explicit
