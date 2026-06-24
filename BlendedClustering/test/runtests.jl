@@ -276,4 +276,32 @@ end
     @test_throws ErrorException TC.build_economic_feature_scale(conn)
   end
 
+  @testset "minmax_rescale" begin
+    M = [1.0 3.0 5.0; 10.0 10.0 10.0]            # row 2 is constant across periods
+    scaled, keep = TC.minmax_rescale(M, 0.0)
+    @test keep == [true, false]                  # constant row dropped (no range / avoids 0/0)
+    @test scaled ≈ [0.0 0.5 1.0]                 # row 1 rescaled: min→0, max→1
+  end
+
+  @testset "minmax normalization: selection in [0,1], profiles in original units" begin
+    # Original values well outside [0,1] so original units are distinguishable from
+    # the min-max-rescaled selection space.
+    Random.seed!(21)
+    rows = NamedTuple[]
+    for p in 1:12, t in 1:3
+      push!(rows, (period=p, timestep=t, id="A", profile_type="demand", value=100 + 100rand()))
+      push!(rows, (period=p, timestep=t, id="B", profile_type="availability", value=50rand()))
+    end
+    df = DataFrame(rows)
+    res = find_representative_periods(df, 4; method=:convex_hull, minmax=true)
+    # Selection space: every feature row rescaled to [0,1].
+    @test all(isapprox.(minimum(res.clustering_matrix, dims=2), 0; atol=1e-9))
+    @test all(isapprox.(maximum(res.clustering_matrix, dims=2), 1; atol=1e-9))
+    # Representative profiles stay in the original units (values far outside [0,1]).
+    @test maximum(res.profiles.value) > 1
+    # minmax and feature_scale are mutually exclusive.
+    @test_throws ArgumentError find_representative_periods(
+      df, 4; method=:convex_hull, minmax=true, feature_scale=Dict(("A", "demand") => 1.0))
+  end
+
 end

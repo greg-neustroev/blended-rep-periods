@@ -18,12 +18,17 @@ export ClusteringResult, AuxiliaryClusteringData
 const DEFAULT_PGD_TOL = 1e-2
 
 # Default clustering-feature normalization used when a configuration CSV omits the
-# optional `normalization` column. `:unscaled` reproduces the historical behavior:
-# cluster directly on the dimensionless profiles as stored, where each value is a
-# fraction of the asset's peak (0 means physically zero, 1 means the peak), with no
-# scaling of its own. `:economic` instead rescales the features into common
-# physical/economic units (peak × profile, per-block economic weights) before
-# clustering. The features are never centered, so zero keeps meaning zero.
+# optional `normalization` column. Supported values:
+#   - `:unscaled` (default): the historical behavior — cluster directly on the
+#     dimensionless profiles as stored, where each value is a fraction of the asset's
+#     peak (0 means physically zero, 1 means the peak), with no scaling of its own.
+#   - `:minmax`: rescale each feature row to [0,1] (its minimum across periods → 0,
+#     its maximum → 1). The classic per-feature min-max baseline; it centers (removes
+#     the absolute level), so it is applied only to the clustering features.
+#   - `:economic`: rescale the features into common physical/economic units (peak ×
+#     profile, per-block economic weights), never centered, so zero keeps meaning zero.
+# `:minmax` and `:economic` transform only the selection/weight-fitting space; the
+# representative-period profiles handed to the model stay in the original units.
 const DEFAULT_NORMALIZATION = :unscaled
 
 
