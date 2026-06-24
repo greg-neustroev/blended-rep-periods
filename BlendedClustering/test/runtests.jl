@@ -43,10 +43,11 @@ end
     c = rand(8)
     g = x -> R' * (R * x - c)
     step = 1 / opnorm(R, 2)^2  # the principled 1/L step used in the package
-    w = projected_gradient_descent!(
+    w, n_iter = projected_gradient_descent!(
       rand(3); gradient=g, projection=project_onto_simplex,
       learning_rate=step, tol=1e-8,
     )
+    @test n_iter >= 1                    # reports the realized iteration count
     @test sum(w) ≈ 1
     @test all(w .>= -1e-9)
     # The fitted point is no worse than an arbitrary feasible point.

@@ -406,6 +406,7 @@ function greedy_convex_hull(
   mean_vector::Union{Vector{Float64},Nothing}=nothing,
   cache::Bool=true,
   tol::Float64=1e-2,
+  stats::Union{Nothing,Dict{Symbol,Any}}=nothing,
 )
   if initial_indices ≡ nothing
     if mean_vector ≡ nothing
@@ -425,6 +426,10 @@ function greedy_convex_hull(
   # otherwise it is recomputed.
   projection_cache = Dict{Int,Tuple{Vector{Float64},Float64}}()
   starting_index = length(initial_indices) + 1
+  # Cache accounting: per-outer-iteration hit/miss counts (so the hit-rate-vs-
+  # iteration curve and the total can be reported) when `stats` is provided.
+  hits_per_iter = Int[]
+  misses_per_iter = Int[]
   for _ ∈ starting_index:n_points
     max_distance = -Inf
     furthest_vector_index = nothing
@@ -434,6 +439,8 @@ function greedy_convex_hull(
     # Lipschitz constant of the projection objective's gradient.
     step_size = 1 / opnorm(hull_matrix, 2)^2
     last_added_vector = matrix[:, last(hull_indices)]
+    iter_hits = 0
+    iter_misses = 0
     # Soundness requires re-testing EVERY candidate against the newest
     # representative on EVERY outer iteration; do not skip candidates here.
     for column_index ∈ axes(matrix, 2)
@@ -446,23 +453,33 @@ function greedy_convex_hull(
          dot(target_vector - cached[1], last_added_vector - cached[1]) ≤ 0
         # Cached projection is still exact for the enlarged hull.
         d = cached[2]
+        iter_hits += 1
       else
         gradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
         x = projection_matrix * target_vector
-        x = projected_gradient_descent!(x; gradient, projection=project_onto_simplex, learning_rate=step_size, tol)
+        x, _ = projected_gradient_descent!(x; gradient, projection=project_onto_simplex, learning_rate=step_size, tol)
         projected_target = hull_matrix * x
         d = norm(projected_target - target_vector)
         projection_cache[column_index] = (projected_target, d)
+        iter_misses += 1
       end
       if d > max_distance
         max_distance = d
         furthest_vector_index = column_index
       end
     end
+    push!(hits_per_iter, iter_hits)
+    push!(misses_per_iter, iter_misses)
     if furthest_vector_index ≡ nothing
       throw(ArgumentError("Point not found"))
     end
     push!(hull_indices, furthest_vector_index)
+  end
+  if stats ≢ nothing
+    stats[:cache_hits] = get(stats, :cache_hits, 0) + sum(hits_per_iter)
+    stats[:cache_misses] = get(stats, :cache_misses, 0) + sum(misses_per_iter)
+    stats[:cache_hits_per_iter] = hits_per_iter
+    stats[:cache_misses_per_iter] = misses_per_iter
   end
   return hull_indices
 end
@@ -491,6 +508,7 @@ function select_representatives(
   n_periods::Int,
   method::Symbol;
   tol::Float64=1e-2,
+  stats::Union{Nothing,Dict{Symbol,Any}}=nothing,
   args...,
 )
   if method ≡ :k_means
@@ -506,7 +524,7 @@ function select_representatives(
     assignments = kmedoids_result.assignments
     selected_indices = kmedoids_result.medoids
   elseif method ≡ :convex_hull
-    hull_indices = greedy_convex_hull(matrix; n_points=n_rp, tol)
+    hull_indices = greedy_convex_hull(matrix; n_points=n_rp, tol, stats)
     rp_matrix = matrix[:, hull_indices]
     assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
     selected_indices = hull_indices
@@ -514,7 +532,7 @@ function select_representatives(
     # Add a null vector as a column, run the convex-hull method initialized at
     # it, then drop it; the remaining positive weights sum to at most one.
     augmented = [zeros(size(matrix, 1), 1) matrix]
-    hull_indices = greedy_convex_hull(augmented; n_points=n_rp + 1, initial_indices=[1], tol)
+    hull_indices = greedy_convex_hull(augmented; n_points=n_rp + 1, initial_indices=[1], tol, stats)
     popfirst!(hull_indices)
     hull_indices .-= 1
     rp_matrix = matrix[:, hull_indices]
@@ -525,7 +543,7 @@ function select_representatives(
     normalize!(normal_vector)
     projection_coefficients = [1.0 / dot(normal_vector, matrix[:, j]) for j ∈ axes(matrix, 2)]
     projected_matrix = [matrix[i, j] * projection_coefficients[j] for i ∈ axes(matrix, 1), j ∈ axes(matrix, 2)]
-    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol)
+    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol, stats)
     rp_matrix = matrix[:, hull_indices]
     assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
     selected_indices = hull_indices
@@ -671,8 +689,11 @@ function find_representative_periods(
   # but always reconstruct the representative-period profiles in the original units
   # the model expects — only the *selection* and the fitted *weights* live in the
   # transformed space, never the profiles handed to the model.
+  # Selection diagnostics (greedy-hull cache hit/miss counts) accumulate here and
+  # are attached to the returned ClusteringResult.
+  selection_stats = Dict{Symbol,Any}()
   if feature_scale ≡ nothing && !minmax
-    rp_matrix, assignments, _ = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, args...)
+    rp_matrix, assignments, _ = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, stats=selection_stats, args...)
     representative_profiles = rp_matrix
     selection_matrix = clustering_matrix
   else
@@ -692,7 +713,7 @@ function find_representative_periods(
       selection_matrix, keep = minmax_rescale(clustering_matrix, var_threshold)
     end
     rp_matrix, assignments, selected_indices =
-      select_representatives(selection_matrix, n_rp, n_periods, method; tol, args...)
+      select_representatives(selection_matrix, n_rp, n_periods, method; tol, stats=selection_stats, args...)
     # Original-unit representative profiles: the selected period columns for the
     # hull / k-medoids methods, or the original-space centroids of the transformed
     # clusters for k-means (whose representatives are synthetic, not columns).
@@ -728,7 +749,9 @@ function find_representative_periods(
   # `selection_matrix`/`rp_matrix` are the space weights are fitted in: the original
   # profiles for `:unscaled` (where `selection_matrix == clustering_matrix`), the
   # scaled, pruned features for `:economic`.
-  return ClusteringResult(rp_df, weight_matrix, selection_matrix, rp_matrix)
+  result = ClusteringResult(rp_df, weight_matrix, selection_matrix, rp_matrix)
+  merge!(result.diagnostics, selection_stats)
+  return result
 end
 
 function cluster_using_experiment_data(experiment_data, connection)

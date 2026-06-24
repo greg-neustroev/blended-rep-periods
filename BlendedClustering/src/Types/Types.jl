@@ -133,10 +133,18 @@ mutable struct ClusteringResult
     weight_matrix::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}
     clustering_matrix::Union{Matrix{Float64},Nothing}
     rp_matrix::Union{Matrix{Float64},Nothing}
+    # Free-form diagnostics captured while selecting representatives and fitting
+    # weights (greedy-hull cache hit/miss counts, per-fit PGD iteration counts,
+    # the chosen weight initialization). Populated in place so the experiment
+    # layer can record them without re-running the clustering.
+    diagnostics::Dict{Symbol,Any}
 end
 
-# Convenience constructor: the clustering/representative-period matrices are not
-# always available (e.g. the single-period fast path), so default them to nothing.
+# Convenience constructors: the clustering/representative-period matrices are not
+# always available (e.g. the single-period fast path), so default them to nothing;
+# diagnostics default to an empty dict.
+ClusteringResult(profiles, weight_matrix, clustering_matrix, rp_matrix) =
+    ClusteringResult(profiles, weight_matrix, clustering_matrix, rp_matrix, Dict{Symbol,Any}())
 ClusteringResult(profiles, weight_matrix) =
     ClusteringResult(profiles, weight_matrix, nothing, nothing)
 
