@@ -693,7 +693,7 @@ function find_representative_periods(
   # are attached to the returned ClusteringResult.
   selection_stats = Dict{Symbol,Any}()
   if feature_scale ≡ nothing && !minmax
-    rp_matrix, assignments, _ = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, stats=selection_stats, args...)
+    rp_matrix, assignments, selected_indices = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, stats=selection_stats, args...)
     representative_profiles = rp_matrix
     selection_matrix = clustering_matrix
   else
@@ -722,6 +722,12 @@ function find_representative_periods(
                               clustering_matrix[:, selected_indices]
     log_scaled_selection_diagnostics(keys.profile_type, keep, selection_matrix; var_threshold)
   end
+
+  # Record the nearest-representative assignment and the selected base-period
+  # indices (hull / k-medoids; `nothing` for synthetic k-means centroids) as
+  # clustering artifacts so they can be dumped without re-running the selection.
+  selection_stats[:assignments] = assignments
+  selection_stats[:selected_indices] = selected_indices
 
   # Fill in the weight matrix using the assignments
 

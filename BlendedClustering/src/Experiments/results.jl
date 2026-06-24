@@ -143,3 +143,81 @@ function save_solution_to_arrow(
     end
     return
 end
+
+# Tidy (period, rep_period, weight) table of the non-zero blending weights.
+function _weight_table(W)
+    periods = Int[]
+    reps = Int[]
+    weights = Float64[]
+    nrows, ncols = size(W)
+    for p in 1:nrows, r in 1:ncols
+        w = W[p, r]
+        iszero(w) && continue
+        push!(periods, p)
+        push!(reps, r)
+        push!(weights, w)
+    end
+    return DataFrame(period=periods, rep_period=reps, weight=weights)
+end
+
+"""
+    save_clustering_artifacts(clustering_result, outputs_dir, result_name, seed)
+
+Dump the clustering-side artifacts to Arrow under `<outputs_dir>/<result_name>/`:
+the blended-weight matrix, the nearest-representative assignment, the selected
+representative base-period indices, the singular-value spectrum of the RP matrix,
+the per-base-period projection-error residuals, the per-fit PGD iteration counts,
+and the per-greedy-iteration cache hit/miss counts. These make every weight,
+geometry, and convergence analysis reproducible offline. Missing pieces (e.g. the
+single-period fast path, or `selected_indices` for k-means centroids) are skipped.
+"""
+function save_clustering_artifacts(
+    clustering_result::ClusteringResult,
+    outputs_dir::AbstractString,
+    result_name::AbstractString,
+    seed::Int,
+)
+    subdir = joinpath(outputs_dir, result_name)
+    mkpath(subdir)
+    diag = clustering_result.diagnostics
+    function write_df(name, df)
+        df[!, :seed] = fill(seed, nrow(df))
+        Arrow.write(joinpath(subdir, name), df)
+    end
+
+    W = clustering_result.weight_matrix
+    W === nothing || write_df("weights.arrow", _weight_table(W))
+
+    R = clustering_result.rp_matrix
+    if R !== nothing && !isempty(R)
+        svals = svdvals(Matrix{Float64}(R))
+        write_df("rp_spectrum.arrow", DataFrame(index=1:length(svals), singular_value=svals))
+        C = clustering_result.clustering_matrix
+        if W !== nothing && C !== nothing && size(C, 2) == size(W, 1)
+            residual = R * Matrix(W)' - C                       # features × base periods
+            per_period = vec(sqrt.(sum(abs2, residual; dims=1)))
+            write_df("projection_error_per_period.arrow",
+                DataFrame(period=1:length(per_period), residual=per_period))
+        end
+    end
+
+    if haskey(diag, :assignments) && diag[:assignments] !== nothing
+        a = diag[:assignments]
+        write_df("rp_assignment.arrow", DataFrame(period=1:length(a), rep_period=a))
+    end
+    if haskey(diag, :selected_indices) && diag[:selected_indices] !== nothing
+        idx = diag[:selected_indices]
+        write_df("selected_rp_indices.arrow", DataFrame(rep_period=1:length(idx), base_period=idx))
+    end
+    if haskey(diag, :pgd_iters) && !isempty(diag[:pgd_iters])
+        it = diag[:pgd_iters]
+        write_df("pgd_iterations.arrow", DataFrame(fit_index=1:length(it), iterations=it))
+    end
+    if haskey(diag, :cache_hits_per_iter)
+        hits = diag[:cache_hits_per_iter]
+        misses = get(diag, :cache_misses_per_iter, zeros(Int, length(hits)))
+        write_df("cache_per_iteration.arrow",
+            DataFrame(greedy_iteration=1:length(hits), hits=hits, misses=misses))
+    end
+    return
+end

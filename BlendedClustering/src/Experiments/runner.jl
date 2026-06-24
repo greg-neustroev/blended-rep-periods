@@ -40,7 +40,7 @@ function run_experiments(
                 experiment_data = ExperimentData(run_data_row, input)
                 model = Model(optimizer)
                 eval_model = Model(optimizer)
-                result = run_experiment(experiment_data, model, eval_model, connection, seed)
+                result, clustering_result = run_experiment(experiment_data, model, eval_model, connection, seed)
                 save_result_to_csv(output_file, result, time_to_read)
                 save_variables_to_csv(model, outputs_dir, result.name, seed)
                 # Full primal solution + nodal-price duals for both the reduced and
@@ -48,6 +48,9 @@ function run_experiments(
                 # experiment skips evaluation, since it is then never solved).
                 save_solution_to_arrow(model, outputs_dir, result.name, seed; kind="reduced")
                 save_solution_to_arrow(eval_model, outputs_dir, result.name, seed; kind="eval")
+                # Clustering-side artifacts (weights, assignment, selected RPs,
+                # spectrum, residuals, PGD/cache diagnostics) for offline analysis.
+                save_clustering_artifacts(clustering_result, outputs_dir, result.name, seed)
             end
         end
     end

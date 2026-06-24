@@ -86,5 +86,5 @@ function run_experiment(
         time_to_formulate_model,
         time_to_solve
     )
-    return result
+    return result, clustering_result
 end
