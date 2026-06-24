@@ -226,7 +226,7 @@ end
     df = econ_clustering_df(seed=12, constant_block=true)
     fs = Dict(("A", "demand") => 2.0, ("B", "availability") => 2.0, ("C", "availability") => 2.0)
     base = find_representative_periods(df, 3; method=:convex_hull)
-    econ = find_representative_periods(df, 3; method=:convex_hull, feature_scale=fs, var_threshold=0.0)
+    econ = find_representative_periods(df, 3; method=:convex_hull, feature_scale=fs)
     # The constant "C" rows (one per timestep) are pruned from the scaled selection space.
     n_timesteps = 3
     @test size(econ.clustering_matrix, 1) == size(base.clustering_matrix, 1) - n_timesteps
@@ -296,7 +296,7 @@ end
 
   @testset "minmax_rescale" begin
     M = [1.0 3.0 5.0; 10.0 10.0 10.0]            # row 2 is constant across periods
-    scaled, keep = TC.minmax_rescale(M, 0.0)
+    scaled, keep = TC.minmax_rescale(M)
     @test keep == [true, false]                  # constant row dropped (no range / avoids 0/0)
     @test scaled ≈ [0.0 0.5 1.0]                 # row 1 rescaled: min→0, max→1
   end

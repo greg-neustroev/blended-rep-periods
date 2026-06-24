@@ -592,20 +592,19 @@ function original_space_centroids(matrix::AbstractMatrix{Float64}, assignments::
 end
 
 """
-    minmax_rescale(matrix, var_threshold) -> (scaled, keep)
+    minmax_rescale(matrix) -> (scaled, keep)
 
 Min-max normalize each row of `matrix` to `[0,1]` (row minimum → 0, row maximum →
-1), dropping rows whose across-period range is `≤ var_threshold` (constant rows
-carry no inter-period information and have no range to rescale — this also avoids a
-0/0). Returns the `scaled` matrix over the kept rows and the `keep` mask. Unlike the
-economic scaling, this is an affine per-row transform: it *centers* (subtracts the
-row minimum), so it is used only for selection/weight fitting, never for the profiles
-returned to the model.
+1), dropping rows that are constant across periods (zero range — they carry no
+inter-period information and would give a 0/0). Returns the `scaled` matrix over the
+kept rows and the `keep` mask. Unlike the economic scaling, this is an affine per-row
+transform: it *centers* (subtracts the row minimum), so it is used only for
+selection/weight fitting, never for the profiles returned to the model.
 """
-function minmax_rescale(matrix::AbstractMatrix{Float64}, var_threshold::Float64)
+function minmax_rescale(matrix::AbstractMatrix{Float64})
   row_min = vec(minimum(matrix, dims=2))
   row_range = vec(maximum(matrix, dims=2)) .- row_min
-  keep = row_range .> var_threshold
+  keep = row_range .> 0.0
   scaled = (matrix[keep, :] .- row_min[keep]) ./ row_range[keep]
   return scaled, keep
 end
@@ -635,18 +634,14 @@ Finds representative periods via data clustering. All distances are Euclidean.
   - `feature_scale`: optional economic normalization. When `nothing` (the default),
     clustering runs on the dimensionless profiles as-is. When a `Dict` mapping
     `(asset id, profile_type) => scale`, every feature row is multiplied by its
-    scale and rows that are constant across periods (range `≤ var_threshold`) are
-    dropped *for selection and weight fitting only* — the representative-period
-    profiles returned for the model are always reconstructed in the original,
-    unscaled units (see [`build_economic_feature_scale`](@ref)).
+    scale and rows that are constant across periods (zero range) are dropped *for
+    selection and weight fitting only* — the representative-period profiles returned
+    for the model are always reconstructed in the original, unscaled units (see
+    [`build_economic_feature_scale`](@ref)).
   - `minmax`: optional per-feature-row min-max normalization. When `true`, each
     feature row is rescaled to `[0,1]` (its minimum across periods → 0, its maximum
     → 1) for selection and weight fitting only; the returned profiles stay in the
     original units. Mutually exclusive with `feature_scale`.
-  - `var_threshold`: drop a feature row from the transformed selection space when
-    its *original dimensionless* profile varies by no more than this across periods
-    (default `0.0`, i.e. drop only exactly-constant rows). Scale-independent, and it
-    also guards the min-max rescale against a 0/0 on a constant row.
   - other named arguments can be provided; they are passed to the clustering method.
 """
 function find_representative_periods(
@@ -657,7 +652,6 @@ function find_representative_periods(
   tol::Float64=1e-2,
   feature_scale::Union{Nothing,AbstractDict}=nothing,
   minmax::Bool=false,
-  var_threshold::Float64=0.0,
   cache::Bool=true,
   args...,
 )
@@ -719,13 +713,13 @@ function find_representative_periods(
       # hulls; the test uses the *original* variation, so it is scale-independent.
       scale_vector = economic_scale_vector(feature_scale, keys)
       row_range = vec(maximum(clustering_matrix, dims=2) .- minimum(clustering_matrix, dims=2))
-      keep = row_range .> var_threshold
+      keep = row_range .> 0.0
       selection_matrix = (scale_vector .* clustering_matrix)[keep, :]
     else
       # Min-max: rescale each row to [0,1] (its minimum across periods → 0, its
       # maximum → 1). Rows constant across periods have no range to rescale and are
-      # dropped (the same `var_threshold` test, which also avoids a 0/0).
-      selection_matrix, keep = minmax_rescale(clustering_matrix, var_threshold)
+      # dropped (which also avoids a 0/0).
+      selection_matrix, keep = minmax_rescale(clustering_matrix)
     end
     rp_matrix, assignments, selected_indices =
       select_representatives(selection_matrix, n_rp, n_periods, method; tol, cache, stats=selection_stats, args...)
@@ -735,7 +729,7 @@ function find_representative_periods(
     representative_profiles = selected_indices ≡ nothing ?
                               original_space_centroids(clustering_matrix, assignments, n_rp) :
                               clustering_matrix[:, selected_indices]
-    log_scaled_selection_diagnostics(keys.profile_type, keep, selection_matrix; var_threshold)
+    log_scaled_selection_diagnostics(keys.profile_type, keep, selection_matrix)
   end
 
   # Record the nearest-representative assignment and the selected base-period
