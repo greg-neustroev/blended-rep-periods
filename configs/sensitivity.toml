@@ -1,0 +1,9 @@
+# Hyperparameter sensitivity: run gep + 5bus FIRST to settle tol/normalization/init from their embedded factorial, then run the rest via full_suite.toml.
+inputs = ["tyndp/gep", "sienna/5bus"]
+
+master_seed = 382507
+n_seeds     = 10
+
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

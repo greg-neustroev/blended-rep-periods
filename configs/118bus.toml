@@ -1,0 +1,9 @@
+# Sienna 118-bus case study (larger non-TYNDP network).
+inputs = ["sienna/118bus"]
+
+master_seed = 382507
+n_seeds     = 10
+
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"
