@@ -170,7 +170,12 @@ function create_optimization_model!(connection, model, clustering_result)
             add_to_expression!(e_in, flow[row.id, r, h])
         end
 
-        # Now for each location-carrier combination, make the balance constraint
+        # Now for each location-carrier combination, make the balance constraint.
+        # Retain the constraint references keyed by (location, carrier, rep_period,
+        # timestep) in `model.ext` so the nodal/marginal prices (their duals) can be
+        # exported after the solve without re-deriving which constraint priced which
+        # node — these are anonymous constraints, so this is the only handle on them.
+        balance_constraints = Dict{Tuple,Any}()
         balance_data = run_query("SELECT * FROM balance_constraint_view")
         for row in rows(balance_data)
             key = (row.location, row.carrier, row.rep_period, row.timestep)
@@ -179,8 +184,9 @@ function create_optimization_model!(connection, model, clustering_result)
             add_term!(lhs, total_power_in, key, -1.0)
             add_term!(lhs, total_flow_out, key, -1.0)
             add_term!(lhs, total_flow_in, key, 1.0)
-            @constraint(model, lhs == row.demand_profile * row.peak_demand)
+            balance_constraints[key] = @constraint(model, lhs == row.demand_profile * row.peak_demand)
         end
+        model.ext[:balance_constraints] = balance_constraints
     end
 
     @timed_step timings "storage_short_term" "- Adding intra-period short-term storage constraints" begin

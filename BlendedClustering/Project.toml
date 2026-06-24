@@ -1,9 +1,10 @@
 name = "BlendedClustering"
 uuid = "c351942f-72a9-42a5-b07d-a097b9403a5d"
-authors = ["Greg Neustroev <G.Neustroev@tudelft.nl>"]
 version = "0.1.0"
+authors = ["Greg Neustroev <G.Neustroev@tudelft.nl>"]
 
 [deps]
+Arrow = "69666777-d1a9-59fb-9406-91d4454c9d45"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 Clustering = "aaaa29a8-35af-508c-8bc3-b662a17a0fe5"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
@@ -22,6 +23,7 @@ TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 Tables = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 
 [compat]
+Arrow = "2.8.1"
 DuckDB = "1.3.2"
 Glob = "1.3.1"
 MathOptInterface = "1.42.0"

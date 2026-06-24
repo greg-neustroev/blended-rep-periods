@@ -43,6 +43,11 @@ function run_experiments(
                 result = run_experiment(experiment_data, model, eval_model, connection, seed)
                 save_result_to_csv(output_file, result, time_to_read)
                 save_variables_to_csv(model, outputs_dir, result.name, seed)
+                # Full primal solution + nodal-price duals for both the reduced and
+                # the full-horizon evaluation model (the latter is a no-op when the
+                # experiment skips evaluation, since it is then never solved).
+                save_solution_to_arrow(model, outputs_dir, result.name, seed; kind="reduced")
+                save_solution_to_arrow(eval_model, outputs_dir, result.name, seed; kind="eval")
             end
         end
     end
