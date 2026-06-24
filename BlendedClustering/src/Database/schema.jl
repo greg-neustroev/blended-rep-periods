@@ -494,13 +494,15 @@ function create_rp_dependent_views(connection)
         connection,
         """
         CREATE OR REPLACE VIEW intra_period_storage_capacity_constraint_view AS
-        SELECT id, t.rep_period, t.timestep, capacity_storage_energy
+        SELECT s.id, t.rep_period, t.timestep, s.capacity_storage_energy,
+               s.initial_units, (inv.id IS NOT NULL) AS investable
         FROM
         (SELECT DISTINCT rep_period, timestep FROM rp_profiles) AS t
         CROSS JOIN
-        storage_assets
+        storage_assets s
+        LEFT JOIN investments inv ON s.id = inv.id
         ORDER BY
-        id, t.rep_period, t.timestep
+        s.id, t.rep_period, t.timestep
         """
     )
     DBInterface.execute(

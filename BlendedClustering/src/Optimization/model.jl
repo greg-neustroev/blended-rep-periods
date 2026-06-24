@@ -444,10 +444,23 @@ function create_optimization_model!(connection, model, clustering_result)
             "SELECT * FROM intra_period_storage_capacity_constraint_view"
         )
         for row in rows(intraperiod_storage_capacity_data)
-            JuMP.set_upper_bound(
-                state_of_charge_intra[row.id, row.rep_period, row.timestep],
-                row.capacity_storage_energy
-            )
+            if row.investable && row.initial_units > 0
+                # Investing in storage scales the energy reservoir together with the
+                # power rating (a fixed-duration battery): the SoC cap grows in
+                # proportion to the total units, so storage expansion adds MWh as well
+                # as MW. Non-investable storage keeps a constant bound (the historical
+                # behaviour, since `invested_units` is then absent).
+                @constraint(model,
+                    state_of_charge_intra[row.id, row.rep_period, row.timestep] <=
+                    row.capacity_storage_energy *
+                    (row.initial_units + invested_units[row.id]) / row.initial_units
+                )
+            else
+                JuMP.set_upper_bound(
+                    state_of_charge_intra[row.id, row.rep_period, row.timestep],
+                    row.capacity_storage_energy
+                )
+            end
         end
     end
 
