@@ -1,0 +1,14 @@
+# Sensitivity: FULL tol x normalization x init matrix on 5bus (run this first).
+master_seed = 382507
+n_seeds     = 10
+
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"
+
+# The sweep file and the data/output directory differ: this sensitivity sweep
+# targets the sienna/5bus data and output namespace, so experiments it shares with the
+# main sienna/5bus sweep are recorded once and skipped (not re-solved) by either run.
+[[inputs]]
+sweep = "sienna/sens_5bus"
+data  = "sienna/5bus"
