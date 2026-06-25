@@ -610,6 +610,84 @@ function minmax_rescale(matrix::AbstractMatrix{Float64})
 end
 
 """
+    build_inflow_integral_rows(clustering_matrix, keys; energy_scale=nothing, timestep_duration=1.0) -> Matrix{Float64}
+
+Build the integrated-inflow feature rows `E_int` appended to the clustering matrix when
+an inflow-integral weight λ is set. For every inflow asset `s` (a `keys` row with
+`profile_type == "inflows"`) one row is produced from the per-period sum, over the
+period's timesteps `h`, of its dimensionless inflow profile `Σ_h E_{s,d,h}` (the
+`inflows` rows of `clustering_matrix`). Summing over timesteps collapses the time
+dimension, so each inflow asset contributes a single seasonal-energy row. How that sum
+is scaled depends on the selection space:
+
+  - **Unscaled / min-max** (`energy_scale === nothing`): normalize by the per-period
+    peak integral `H` (the asset's number of timesteps), giving the dimensionless
+    period-mean profile `E_int[s,d] = (Σ_h E_{s,d,h}) / H ∈ [0,1]`. The physical `τ`
+    and `E^max_s` cancel against this per-period-peak normalizer, so the row sits on
+    the same `1 = peak` scale as the hourly profile block.
+  - **Economic** (`energy_scale` given): keep the physical, cost-weighted energy
+    `E_int[s,d] = τ · (V̄·E^max_s) · Σ_h E_{s,d,h}`, where `energy_scale[s] = V̄·E^max_s`
+    is the asset's economic inflow scale and `τ` is `timestep_duration`. Here `E^max_s`
+    does its inter-asset weighting natively, alongside the economically-scaled blocks.
+
+Rows are ordered by first appearance of the asset id in `keys`. Returns a `0 × n_periods`
+matrix when the data carries no inflow profile, and (economic only) throws if an inflow
+asset has no `energy_scale` entry.
+
+# Examples
+
+```
+julia> C = [1.0 2.0; 0.5 0.5; 0.2 0.4]  # timestep rows; last two are asset "h" inflows
+3×2 Matrix{Float64}:
+ 1.0  2.0
+ 0.5  0.5
+ 0.2  0.4
+
+julia> keys = DataFrame(timestep=[1, 1, 2], id=["d", "h", "h"],
+                        profile_type=["demand", "inflows", "inflows"]);
+
+julia> build_inflow_integral_rows(C, keys)  # unscaled period mean: (0.5+0.2)/2, (0.5+0.4)/2
+1×2 Matrix{Float64}:
+ 0.35  0.45
+
+julia> build_inflow_integral_rows(C, keys; energy_scale=Dict("h" => 10.0), timestep_duration=2.0)
+1×2 Matrix{Float64}:
+ 14.0  18.0
+```
+"""
+function build_inflow_integral_rows(
+  clustering_matrix::AbstractMatrix{Float64},
+  keys::AbstractDataFrame;
+  energy_scale::Union{Nothing,AbstractDict}=nothing,
+  timestep_duration::Float64=1.0,
+)
+  n_periods = size(clustering_matrix, 2)
+  (hasproperty(keys, :profile_type) && hasproperty(keys, :id)) ||
+    return Matrix{Float64}(undef, 0, n_periods)
+  inflow_rows = findall(==("inflows"), string.(keys.profile_type))
+  isempty(inflow_rows) && return Matrix{Float64}(undef, 0, n_periods)
+  inflow_ids = string.(keys.id[inflow_rows])
+  assets = unique(inflow_ids)  # one integrated row per inflow asset, in first-seen order
+  integral = Matrix{Float64}(undef, length(assets), n_periods)
+  for (i, asset) ∈ enumerate(assets)
+    asset_rows = inflow_rows[inflow_ids.==asset]
+    period_sum = vec(sum(view(clustering_matrix, asset_rows, :); dims=1))
+    if energy_scale ≡ nothing
+      # Unscaled / min-max: divide by H (the asset's timestep count) → period mean in
+      # [0,1]; τ and E^max cancel against this per-period-peak normalizer.
+      integral[i, :] = period_sum ./ length(asset_rows)
+    else
+      # Economic: physical, cost-weighted energy τ·(V̄·E^max_s)·Σ_h.
+      haskey(energy_scale, asset) || error(
+        "No economic inflow scale (V̄·E^max) for inflow asset $asset; cannot build " *
+        "the integrated-inflow clustering rows.")
+      integral[i, :] = (timestep_duration * energy_scale[asset]) .* period_sum
+    end
+  end
+  return integral
+end
+
+"""
   find_representative_periods(
     clustering_data;
     n_rp = 10,
@@ -642,6 +720,19 @@ Finds representative periods via data clustering. All distances are Euclidean.
     feature row is rescaled to `[0,1]` (its minimum across periods → 0, its maximum
     → 1) for selection and weight fitting only; the returned profiles stay in the
     original units. Mutually exclusive with `feature_scale`.
+  - `inflow_integral_weight`: the weight λ on the integrated-inflow rows. When it is
+    non-zero (and the data has inflow profiles), the clustering matrix `C = [D; A; E]`
+    is augmented to `C = [D; A; E; λ·E_int]`, where each `E_int` row is an inflow
+    asset's per-period inflow integral (see [`build_inflow_integral_rows`](@ref)). The
+    row is the dimensionless period-mean profile under `:unscaled`/`:minmax`, and the
+    physical cost-weighted energy `τ·V̄·E^max_s·Σ_h` under `:economic`. The integrated
+    rows live only in the selection/weight-fitting space — appended *after* any
+    `feature_scale`/`minmax` transform — so the representative-period profiles handed to
+    the model stay in the original units. Defaults to `0.0` (no augmentation), which
+    leaves every existing result unchanged and makes the row a clean ablation toggle.
+  - `timestep_duration`: the timestep duration `τ`. It enters only the `:economic`
+    integrated-inflow rows (under `:unscaled`/`:minmax` it cancels against the
+    per-period-peak normalizer); defaults to `1.0` and is otherwise unused.
   - other named arguments can be provided; they are passed to the clustering method.
 """
 function find_representative_periods(
@@ -653,6 +744,8 @@ function find_representative_periods(
   feature_scale::Union{Nothing,AbstractDict}=nothing,
   minmax::Bool=false,
   cache::Bool=true,
+  inflow_integral_weight::Float64=0.0,
+  timestep_duration::Float64=1.0,
   args...,
 )
   feature_scale ≡ nothing || !minmax ||
@@ -701,35 +794,69 @@ function find_representative_periods(
   # Selection diagnostics (greedy-hull cache hit/miss counts) accumulate here and
   # are attached to the returned ClusteringResult.
   selection_stats = Dict{Symbol,Any}()
-  if feature_scale ≡ nothing && !minmax
-    rp_matrix, assignments, selected_indices = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, cache, stats=selection_stats, args...)
-    representative_profiles = rp_matrix
-    selection_matrix = clustering_matrix
+
+  # 4a. Base selection space (profiles only), per normalization mode.
+  scaled = feature_scale ≢ nothing || minmax
+  if !scaled
+    base_selection = clustering_matrix
+  elseif feature_scale ≢ nothing
+    # Economic: multiply each row by its (id, profile_type) scale; absolute, never
+    # centered (zero stays physically zero). Drop rows constant across periods —
+    # they carry no inter-period information and bias the origin-anchored conic
+    # hulls; the test uses the *original* variation, so it is scale-independent.
+    scale_vector = economic_scale_vector(feature_scale, keys)
+    row_range = vec(maximum(clustering_matrix, dims=2) .- minimum(clustering_matrix, dims=2))
+    keep = row_range .> 0.0
+    base_selection = (scale_vector .* clustering_matrix)[keep, :]
   else
-    if feature_scale ≢ nothing
-      # Economic: multiply each row by its (id, profile_type) scale; absolute, never
-      # centered (zero stays physically zero). Drop rows constant across periods —
-      # they carry no inter-period information and bias the origin-anchored conic
-      # hulls; the test uses the *original* variation, so it is scale-independent.
-      scale_vector = economic_scale_vector(feature_scale, keys)
-      row_range = vec(maximum(clustering_matrix, dims=2) .- minimum(clustering_matrix, dims=2))
-      keep = row_range .> 0.0
-      selection_matrix = (scale_vector .* clustering_matrix)[keep, :]
-    else
-      # Min-max: rescale each row to [0,1] (its minimum across periods → 0, its
-      # maximum → 1). Rows constant across periods have no range to rescale and are
-      # dropped (which also avoids a 0/0).
-      selection_matrix, keep = minmax_rescale(clustering_matrix)
-    end
-    rp_matrix, assignments, selected_indices =
-      select_representatives(selection_matrix, n_rp, n_periods, method; tol, cache, stats=selection_stats, args...)
-    # Original-unit representative profiles: the selected period columns for the
-    # hull / k-medoids methods, or the original-space centroids of the transformed
-    # clusters for k-means (whose representatives are synthetic, not columns).
+    # Min-max: rescale each row to [0,1] (its minimum across periods → 0, its
+    # maximum → 1). Rows constant across periods have no range to rescale and are
+    # dropped (which also avoids a 0/0).
+    base_selection, keep = minmax_rescale(clustering_matrix)
+  end
+  scaled && log_scaled_selection_diagnostics(keys.profile_type, keep, base_selection)
+
+  # 4b. Optional integrated-inflow augmentation: append the λ·E_int rows so each inflow
+  # asset's per-period inflow integral (summed over timesteps) drives selection and
+  # weight fitting alongside the time-resolved profiles. Under `:unscaled`/`:minmax` the
+  # row is the dimensionless period-mean profile (τ, E^max cancel); under `:economic` it
+  # is the physical cost-weighted energy τ·V̄·E^max·Σ_h, where `V̄·E^max` is read back
+  # from `feature_scale`. The rows are appended *after* any economic/minmax transform and
+  # live only in the selection/weight space — the profiles are reconstructed in original
+  # units below. `λ = 0` (or no inflow data) leaves the base selection untouched, so the
+  # weight is a clean on/off ablation toggle.
+  if inflow_integral_weight ≠ 0.0
+    energy_scale = feature_scale ≡ nothing ? nothing :
+                   Dict(id => sc for ((id, pt), sc) ∈ feature_scale if pt == "inflows")
+    inflow_integral = build_inflow_integral_rows(clustering_matrix, keys; energy_scale, timestep_duration)
+  else
+    inflow_integral = Matrix{Float64}(undef, 0, size(clustering_matrix, 2))
+  end
+  augmented = size(inflow_integral, 1) > 0
+  selection_matrix = augmented ?
+                     vcat(base_selection, inflow_integral_weight .* inflow_integral) :
+                     base_selection
+  if augmented
+    selection_stats[:inflow_integral_weight] = inflow_integral_weight
+    selection_stats[:n_inflow_integral_rows] = size(inflow_integral, 1)
+  end
+
+  # 4c. Select representatives in the (possibly scaled, possibly augmented) space.
+  rp_matrix, assignments, selected_indices =
+    select_representatives(selection_matrix, n_rp, n_periods, method; tol, cache, stats=selection_stats, args...)
+
+  # 4d. Reconstruct the representative-period profiles in the original units the model
+  # needs. The unscaled, un-augmented path returns the selection-space representatives
+  # directly (they already are the original profiles); every transformed selection
+  # space (economic, minmax, or the inflow-integral augmentation) instead maps back to
+  # the original columns — selected base periods for the hull / k-medoids methods, or
+  # the original-space centroids of the clusters for the synthetic k-means centers.
+  if !scaled && !augmented
+    representative_profiles = rp_matrix
+  else
     representative_profiles = selected_indices ≡ nothing ?
                               original_space_centroids(clustering_matrix, assignments, n_rp) :
                               clustering_matrix[:, selected_indices]
-    log_scaled_selection_diagnostics(keys.profile_type, keep, selection_matrix)
   end
 
   # Record the nearest-representative assignment and the selected base-period
@@ -796,15 +923,21 @@ function cluster_using_experiment_data(experiment_data, connection)
   # per-feature physical/economic scale and logs the dataset-level diagnostics.
   feature_scale = nothing
   minmax = false
+  # τ enters only the `:economic` integrated-inflow rows; the economic scale builder
+  # already reads and validates it, so reuse it from `info` rather than re-querying.
+  timestep_duration = 1.0
   if normalization ≡ :economic
     feature_scale, info = build_economic_feature_scale(connection)
     log_economic_scale_info(info)
+    timestep_duration = info.timestep_duration
   elseif normalization ≡ :minmax
     minmax = true
   elseif normalization ≢ :unscaled
     throw(ArgumentError("Unsupported normalization $(normalization); expected :unscaled, :minmax, or :economic"))
   end
-  # Perform the clustering
+  # Perform the clustering. A non-zero `inflow_integral_weight` λ augments the
+  # clustering matrix with the integrated-inflow rows; `0.0` (the default) is the
+  # un-augmented baseline arm of the ablation.
   find_representative_periods(
     clustering_df,
     n_rep_periods;
@@ -813,6 +946,8 @@ function cluster_using_experiment_data(experiment_data, connection)
     feature_scale,
     minmax,
     cache=experiment_data.cache,
+    inflow_integral_weight=experiment_data.inflow_integral_weight,
+    timestep_duration,
     init=:kmcen
   )
 end

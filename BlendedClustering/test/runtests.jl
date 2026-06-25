@@ -150,6 +150,29 @@ end
     end
   end
 
+  @testset "experiment config schema: inflow_integral_weight default off / suffixes name" begin
+    mktempdir() do dir
+      # Absent column -> default off, name unchanged.
+      path = joinpath(dir, "run.csv")
+      open(path, "w") do io
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,evaluation_type")
+        println(io, "5,24,hull,convex,investment_regret")
+      end
+      ed = ExperimentData(first(eachrow(read_run_data(path))), "gep")
+      @test ed.inflow_integral_weight == BC.DEFAULT_INFLOW_INTEGRAL_WEIGHT
+      @test ed.name == "gep_5_24_hull_convex_$(BC.DEFAULT_PGD_TOL)"
+      # Explicit non-zero λ -> field set and name carries the suffix.
+      path2 = joinpath(dir, "run2.csv")
+      open(path2, "w") do io
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,inflow_integral_weight")
+        println(io, "5,24,hull,convex,0.01,investment_regret,0.5")
+      end
+      ed2 = ExperimentData(first(eachrow(read_run_data(path2))), "gep")
+      @test ed2.inflow_integral_weight == 0.5
+      @test ed2.name == "gep_5_24_hull_convex_0.01_inflowint0.5"
+    end
+  end
+
   @testset "resolve_input + cross-sweep experiment identity" begin
     ri = BC.Experiments.resolve_input
     @test ri("tyndp/gep") == ("tyndp/gep", "tyndp/gep")
@@ -335,6 +358,90 @@ end
     # minmax and feature_scale are mutually exclusive.
     @test_throws ArgumentError find_representative_periods(
       df, 4; method=:convex_hull, minmax=true, feature_scale=Dict(("A", "demand") => 1.0))
+  end
+
+  # A clustering frame carrying a demand, an availability, and an inflow asset, in the
+  # (id, profile_type) layout the inflow-integral augmentation reads.
+  function inflow_clustering_df(; n_periods=12, n_timesteps=3, seed=0)
+    Random.seed!(seed)
+    rows = NamedTuple[]
+    for p in 1:n_periods, t in 1:n_timesteps
+      push!(rows, (period=p, timestep=t, id="A", profile_type="demand", value=rand()))
+      push!(rows, (period=p, timestep=t, id="W", profile_type="availability", value=rand()))
+      push!(rows, (period=p, timestep=t, id="H", profile_type="inflows", value=rand()))
+    end
+    DataFrame(rows)
+  end
+
+  @testset "build_inflow_integral_rows" begin
+    C = [1.0 2.0; 0.5 0.5; 0.2 0.4]   # rows: one demand, two inflow timesteps of "h"
+    keys = DataFrame(timestep=[1, 1, 2], id=["d", "h", "h"],
+      profile_type=["demand", "inflows", "inflows"])
+    # Unscaled / min-max: dimensionless period mean (Σ_h profile)/H, with τ, E^max
+    # cancelling. H = 2 timesteps: (0.5+0.2)/2 = 0.35, (0.5+0.4)/2 = 0.45.
+    @test TC.build_inflow_integral_rows(C, keys) ≈ [0.35 0.45]
+    # Economic: physical cost-weighted energy τ·(V̄·E^max)·Σ_h. τ=2, V̄·E^max=10:
+    # 2·10·(0.5+0.2)=14, 2·10·(0.5+0.4)=18.
+    @test TC.build_inflow_integral_rows(C, keys; energy_scale=Dict("h" => 10.0),
+      timestep_duration=2.0) ≈ [14.0 18.0]
+    # No inflow rows -> an empty (0 × n_periods) block, never an error.
+    keys_no_inflow = DataFrame(timestep=[1, 1, 2], id=["d", "d", "d"],
+      profile_type=["demand", "demand", "demand"])
+    @test size(TC.build_inflow_integral_rows(C, keys_no_inflow)) == (0, 2)
+    # In the economic mode a missing inflow scale is an error, not a silent guess.
+    @test_throws ErrorException TC.build_inflow_integral_rows(C, keys;
+      energy_scale=Dict{String,Float64}())
+  end
+
+  @testset "inflow-integral augmentation (unscaled): period-mean row, profiles unchanged" begin
+    df = inflow_clustering_df(seed=31)
+    λ, H = 0.5, 3   # n_timesteps = 3
+    base = find_representative_periods(df, 4; method=:convex_hull)
+    aug = find_representative_periods(df, 4; method=:convex_hull, inflow_integral_weight=λ)
+    # One integrated-inflow row (a single inflow asset) is appended to the selection/
+    # weight-fitting space; everything else keeps its shape.
+    @test size(aug.clustering_matrix, 1) == size(base.clustering_matrix, 1) + 1
+    @test size(aug.clustering_matrix, 2) == size(base.clustering_matrix, 2)
+    # That last row is exactly λ · (Σ_h profile_H)/H — the dimensionless period mean.
+    for p in 1:12
+      expected = λ * sum(df[(df.id.=="H").&(df.period.==p), :value]) / H
+      @test aug.clustering_matrix[end, p] ≈ expected
+    end
+    # The augmented selection matrix is consistent with rp_matrix (same row count),
+    # so weight fitting reconstructs the integrated rows too.
+    @test size(aug.rp_matrix, 1) == size(aug.clustering_matrix, 1)
+    # Representative profiles carry only the original features, in original units —
+    # no fabricated integral rows leak into the model profiles.
+    @test Set(zip(aug.profiles.id, aug.profiles.profile_type)) ==
+          Set(zip(base.profiles.id, base.profiles.profile_type))
+    @test nrow(aug.profiles) == nrow(base.profiles)
+  end
+
+  @testset "inflow-integral augmentation (economic): τ·V̄·E^max·Σ row from feature_scale" begin
+    df = inflow_clustering_df(seed=34)
+    λ, τ = 0.5, 2.0
+    fs = Dict(("A", "demand") => 3.0, ("W", "availability") => 2.0, ("H", "inflows") => 5.0)
+    aug = find_representative_periods(df, 4; method=:convex_hull,
+      feature_scale=fs, inflow_integral_weight=λ, timestep_duration=τ)
+    # The economic integral row carries the physical energy λ·τ·(V̄·E^max)·Σ_h, with
+    # V̄·E^max read back from feature_scale[("H","inflows")] = 5.0.
+    for p in 1:12
+      expected = λ * τ * 5.0 * sum(df[(df.id.=="H").&(df.period.==p), :value])
+      @test aug.clustering_matrix[end, p] ≈ expected
+    end
+  end
+
+  @testset "inflow-integral augmentation: λ=0 and no inflows are no-ops" begin
+    df = inflow_clustering_df(seed=32)
+    base = find_representative_periods(df, 4; method=:convex_hull)
+    # λ = 0 leaves the selection space (and everything else) untouched.
+    zero_λ = find_representative_periods(df, 4; method=:convex_hull, inflow_integral_weight=0.0)
+    @test zero_λ.clustering_matrix == base.clustering_matrix
+    # A non-zero λ on data without inflow profiles is a no-op too.
+    no_inflow = synthetic_clustering_df(seed=33)   # (timestep, asset) layout, no inflows
+    a = find_representative_periods(no_inflow, 3; method=:convex_hull)
+    b = find_representative_periods(no_inflow, 3; method=:convex_hull, inflow_integral_weight=0.7)
+    @test a.clustering_matrix == b.clustering_matrix
   end
 
 end
