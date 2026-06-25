@@ -216,26 +216,25 @@ function log_economic_scale_info(info::NamedTuple)
 end
 
 """
-    log_scaled_selection_diagnostics(profile_types, keep, selection_matrix; var_threshold)
+    log_scaled_selection_diagnostics(profile_types, keep, selection_matrix)
 
 Emit (never fabricate) the geometry diagnostics for the scaled selection space: how
 many constant feature rows were dropped, and — per block and overall — the Frobenius
 share (which block dominates the hull) and the distance to the origin (minimum entry
 and minimum column norm, the conic-vs-convex tell).
 
-`profile_types` is the block label of every original feature row; `keep` is the
-ε_var survival mask; `selection_matrix` is the scaled, pruned matrix actually
-clustered (its rows correspond to `profile_types[keep]`).
+`profile_types` is the block label of every original feature row; `keep` marks the
+rows that vary across periods (constant rows are dropped); `selection_matrix` is the
+scaled, pruned matrix actually clustered (its rows correspond to `profile_types[keep]`).
 """
 function log_scaled_selection_diagnostics(
     profile_types::AbstractVector,
     keep::AbstractVector{Bool},
-    selection_matrix::AbstractMatrix{Float64};
-    var_threshold::Float64,
+    selection_matrix::AbstractMatrix{Float64},
 )
     n_total = length(keep)
     n_dropped = n_total - count(keep)
-    @info "  constant feature rows dropped (range ≤ $var_threshold)" dropped = n_dropped of = n_total
+    @info "  constant feature rows dropped (zero range)" dropped = n_dropped of = n_total
 
     kept_types = collect(profile_types)[keep]
     total_sq = sum(abs2, selection_matrix)

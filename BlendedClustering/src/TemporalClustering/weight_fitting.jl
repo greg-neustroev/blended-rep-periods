@@ -122,6 +122,9 @@ The arguments:
   - `tol`: the resolution; the algorithm stops once no component of `x` changes
     by more than `tol` in an iteration
   - `learning_rate`: the step size `α` (the callers set it to `1/L` per instance)
+
+Returns the tuple `(x, iterations)`: the fitted point and the number of iterations
+the loop actually ran (so callers can record the observed `N(ε)` without imposing it).
 """
 function projected_gradient_descent!(
   x::AbstractVector{Float64};
@@ -140,7 +143,9 @@ function projected_gradient_descent!(
   # enough for the greedy-hull cache certificate (Lemma 1) to stay sound — a flat
   # ∞-norm move threshold is too coarse at the resolutions we use.
   threshold = tol * learning_rate
+  iterations = 0
   for _ ∈ 1:PGD_MAX_ITERS
+    iterations += 1
     g = gradient(x)              # find the gradient
     y = x .- learning_rate .* g  # gradient step, may leave the domain
     x_new = projection(y)        # projection step, return to the domain
@@ -151,7 +156,9 @@ function projected_gradient_descent!(
       break
     end
   end
-  return x
+  # Return the realized iteration count alongside the fitted point so callers can
+  # record the observed N(ε) without imposing it.
+  return x, iterations
 end
 
 """
@@ -187,6 +194,8 @@ function fit_rep_period_weights!(
   rp_matrix::Matrix{Float64};
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
+  init::Symbol=:auto,
+  diagnostics::Union{Nothing,Dict{Symbol,Any}}=nothing,
 )
   # Determine the appropriate projection method
   if weight_type ≡ :dirac
@@ -231,13 +240,25 @@ function fit_rep_period_weights!(
   # check which is the better initial guess and use it
   default_weight_projection_error = sum((rp_matrix * default_weight_matrix - clustering_matrix) .^ 2)
   moore_penrose_projection_error = sum((rp_matrix * moore_penrose_weight_matrix - clustering_matrix) .^ 2)
-  initial_weight_matrix = default_weight_projection_error <= moore_penrose_projection_error ?
-                          default_weight_matrix :
-                          moore_penrose_weight_matrix
+  # Pick the initial guess. `:auto` keeps the lower-error of the two; `:default`
+  # and `:moore_penrose` force one (used by the sensitivity sweep).
+  use_default_init = if init ≡ :default
+    true
+  elseif init ≡ :moore_penrose
+    false
+  else
+    default_weight_projection_error <= moore_penrose_projection_error
+  end
+  initial_weight_matrix = use_default_init ? default_weight_matrix : moore_penrose_weight_matrix
 
   # Principled PGD step size: 1 / L with L = σ_max(rp_matrix)^2, the Lipschitz
   # constant of the projection objective's gradient.
   step_size = 1 / opnorm(rp_matrix, 2)^2
+
+  # Record per-fit PGD iteration counts (one entry per base period that is
+  # actually fitted, i.e. not already within `tol`) and which initial guess won,
+  # so the observed N(ε) range and initialization can be reported without re-running.
+  pgd_iters = Int[]
 
   for period ∈ 1:n_periods
     target_vector = clustering_matrix[:, period]
@@ -247,7 +268,8 @@ function fit_rep_period_weights!(
     if initial_projection_eror ≤ tol
       continue  # already reconstructed within the resolution; keep the initial weights
     end
-    x = projected_gradient_descent!(x; gradient, projection, tol, learning_rate=step_size)
+    x, n_iter = projected_gradient_descent!(x; gradient, projection, tol, learning_rate=step_size)
+    push!(pgd_iters, n_iter)
     fitted_projection_error = norm(rp_matrix * x - target_vector)
     if fitted_projection_error > initial_projection_eror
       @warn "Projection error after fitting is larger than before fitting. Using the initial guess instead."
@@ -276,6 +298,10 @@ function fit_rep_period_weights!(
       x = sparse(x)
     end
     weight_matrix[period, 1:length(x)] = x
+  end
+  if diagnostics ≢ nothing
+    diagnostics[:weight_init] = use_default_init ? :default : :moore_penrose
+    diagnostics[:pgd_iters] = pgd_iters
   end
   return weight_matrix
 end
@@ -306,6 +332,7 @@ function fit_rep_period_weights!(
   clustering_result::ClusteringResult;
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
+  init::Symbol=:auto,
 )
   fit_rep_period_weights!(
     clustering_result.weight_matrix,
@@ -313,5 +340,7 @@ function fit_rep_period_weights!(
     clustering_result.rp_matrix;
     weight_type,
     tol,
+    init,
+    diagnostics=clustering_result.diagnostics,
   )
 end

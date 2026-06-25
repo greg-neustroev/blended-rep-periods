@@ -9,18 +9,20 @@ using ..Database
 using ..TemporalClustering
 using ..Optimization
 
+using Arrow
 using CSV
 using DataFrames
 using DuckDB
 using Gurobi
 using JuMP
 using LinearAlgebra
+using Pkg
 using Random
 using StyledStrings
 using TOML
 
 export run_experiment, run_experiments, run_case_studies
-export save_result_to_csv, save_variables_to_csv
+export save_result_to_csv, save_variables_to_csv, save_solution_to_arrow, save_clustering_artifacts
 
 include("results.jl")      # save_result_to_csv, save_variable(s)_to_csv
 include("evaluation.jl")   # evaluate_solution!

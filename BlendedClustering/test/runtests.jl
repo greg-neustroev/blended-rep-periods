@@ -43,10 +43,11 @@ end
     c = rand(8)
     g = x -> R' * (R * x - c)
     step = 1 / opnorm(R, 2)^2  # the principled 1/L step used in the package
-    w = projected_gradient_descent!(
+    w, n_iter = projected_gradient_descent!(
       rand(3); gradient=g, projection=project_onto_simplex,
       learning_rate=step, tol=1e-8,
     )
+    @test n_iter >= 1                    # reports the realized iteration count
     @test sum(w) ≈ 1
     @test all(w .>= -1e-9)
     # The fitted point is no worse than an arbitrary feasible point.
@@ -81,7 +82,7 @@ end
 
   @testset "find_representative_periods: every method" begin
     df = synthetic_clustering_df(seed=3)
-    for m in (:k_means, :k_medoids, :convex_hull, :convex_hull_with_null, :conical_hull)
+    for m in (:k_means, :k_medoids, :hierarchical, :convex_hull, :convex_hull_with_null, :conical_hull)
       res = find_representative_periods(df, 3; method=m)
       @test size(res.rp_matrix, 2) == 3
       @test size(res.weight_matrix, 2) == 3
@@ -149,6 +150,38 @@ end
     end
   end
 
+  @testset "resolve_input + cross-sweep experiment identity" begin
+    ri = BC.Experiments.resolve_input
+    @test ri("tyndp/gep") == ("tyndp/gep", "tyndp/gep")
+    @test ri(Dict("sweep" => "tyndp/sens_gep", "data" => "tyndp/gep")) == ("tyndp/sens_gep", "tyndp/gep")
+    @test ri(Dict("sweep" => "x")) == ("x", "x")          # data defaults to sweep
+    # A sensitivity-sweep row and the matching main-sweep row produce the SAME
+    # experiment name when both key off the same data, so resume dedups them.
+    main = DataFrame(n_rep_periods=40, period_length=24, clustering_type=:hull,
+      weight_type=:convex, tol=0.01, evaluation_type=:investment_regret, normalization=:unscaled)
+    sens = DataFrame(n_rep_periods=40, period_length=24, clustering_type=:hull,
+      weight_type=:convex, tol=0.01, evaluation_type=:investment_regret, normalization=:unscaled, init=:auto)
+    @test ExperimentData(first(eachrow(main)), "tyndp/gep").name ==
+          ExperimentData(first(eachrow(sens)), "tyndp/gep").name
+  end
+
+  @testset "load_completed_runs (resume support)" begin
+    lcr = BC.Experiments.load_completed_runs
+    mktempdir() do dir
+      f = joinpath(dir, "out.csv")
+      @test isempty(lcr(f))                      # missing file -> nothing completed
+      open(f, "w") do io
+        println(io, "name,seed,objective_value")
+        println(io, "ds_5_24_hull_convex_0.01,123,1.0")
+        println(io, "ds_5_24_hull_convex_0.01,456,2.0")
+      end
+      done = lcr(f)
+      @test ("ds_5_24_hull_convex_0.01", 123) in done
+      @test ("ds_5_24_hull_convex_0.01", 456) in done
+      @test ("ds_5_24_hull_convex_0.01", 999) ∉ done   # un-run seed not skipped
+    end
+  end
+
   @testset "split_into_periods!" begin
     df = DataFrame([:timestep => 1:4, :value => 5:8])
     split_into_periods!(df; period_duration=2)
@@ -208,7 +241,7 @@ end
     df = econ_clustering_df(seed=12, constant_block=true)
     fs = Dict(("A", "demand") => 2.0, ("B", "availability") => 2.0, ("C", "availability") => 2.0)
     base = find_representative_periods(df, 3; method=:convex_hull)
-    econ = find_representative_periods(df, 3; method=:convex_hull, feature_scale=fs, var_threshold=0.0)
+    econ = find_representative_periods(df, 3; method=:convex_hull, feature_scale=fs)
     # The constant "C" rows (one per timestep) are pruned from the scaled selection space.
     n_timesteps = 3
     @test size(econ.clustering_matrix, 1) == size(base.clustering_matrix, 1) - n_timesteps
@@ -278,7 +311,7 @@ end
 
   @testset "minmax_rescale" begin
     M = [1.0 3.0 5.0; 10.0 10.0 10.0]            # row 2 is constant across periods
-    scaled, keep = TC.minmax_rescale(M, 0.0)
+    scaled, keep = TC.minmax_rescale(M)
     @test keep == [true, false]                  # constant row dropped (no range / avoids 0/0)
     @test scaled ≈ [0.0 0.5 1.0]                 # row 1 rescaled: min→0, max→1
   end

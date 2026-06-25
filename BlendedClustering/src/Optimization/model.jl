@@ -88,7 +88,11 @@ function create_optimization_model!(connection, model, clustering_result)
         # Operations, spillage and borrow costs are accumulated in a single pass
         # over each (small) cost table, fanning out across (r, h) with
         # `add_to_expression!` so we never materialise an R×H array of terms nor
-        # re-iterate the DuckDB result once per timestep.
+        # re-iterate the DuckDB result once per timestep. Each cost component is a
+        # separately named expression so the objective can be decomposed after the
+        # solve via `value(model[:cost_of_operations])` etc. — kept distinct (rather
+        # than lumped into one `cost_of_operations`) so capex/opex/spillage/ENS can
+        # be reported without re-solving.
         @expression(model, cost_of_operations, AffExpr(0.0))
         operations_cost_data = run_query("SELECT * FROM operations_cost_objective_view")
         for row in rows(operations_cost_data)
@@ -101,30 +105,32 @@ function create_optimization_model!(connection, model, clustering_result)
             end
         end
 
+        @expression(model, cost_of_spillage, AffExpr(0.0))
         spillage_cost_data = run_query("SELECT * FROM spillage_cost_objective_view")
         for row in rows(spillage_cost_data)
             c = row.spillage_cost
             for r in R
                 w = rp_weight[r] * c
                 for h in H
-                    add_to_expression!(cost_of_operations, w, spillage[row.id, r, h])
+                    add_to_expression!(cost_of_spillage, w, spillage[row.id, r, h])
                 end
             end
         end
 
+        @expression(model, cost_of_borrow, AffExpr(0.0))
         borrow_cost_data = run_query("SELECT * FROM borrow_cost_objective_view")
         for row in rows(borrow_cost_data)
             c = row.borrow_cost
             for r in R
                 w = rp_weight[r] * c
                 for h in H
-                    add_to_expression!(cost_of_operations, w, borrow[row.id, r, h])
+                    add_to_expression!(cost_of_borrow, w, borrow[row.id, r, h])
                 end
             end
         end
 
         # Finally, formulate the objective function as the sum of the costs
-        @objective(model, Min, cost_of_investment + cost_of_operations)
+        @objective(model, Min, cost_of_investment + cost_of_operations + cost_of_spillage + cost_of_borrow)
     end
 
     @info "Creating constraints"
@@ -164,7 +170,12 @@ function create_optimization_model!(connection, model, clustering_result)
             add_to_expression!(e_in, flow[row.id, r, h])
         end
 
-        # Now for each location-carrier combination, make the balance constraint
+        # Now for each location-carrier combination, make the balance constraint.
+        # Retain the constraint references keyed by (location, carrier, rep_period,
+        # timestep) in `model.ext` so the nodal/marginal prices (their duals) can be
+        # exported after the solve without re-deriving which constraint priced which
+        # node — these are anonymous constraints, so this is the only handle on them.
+        balance_constraints = Dict{Tuple,Any}()
         balance_data = run_query("SELECT * FROM balance_constraint_view")
         for row in rows(balance_data)
             key = (row.location, row.carrier, row.rep_period, row.timestep)
@@ -173,8 +184,9 @@ function create_optimization_model!(connection, model, clustering_result)
             add_term!(lhs, total_power_in, key, -1.0)
             add_term!(lhs, total_flow_out, key, -1.0)
             add_term!(lhs, total_flow_in, key, 1.0)
-            @constraint(model, lhs == row.demand_profile * row.peak_demand)
+            balance_constraints[key] = @constraint(model, lhs == row.demand_profile * row.peak_demand)
         end
+        model.ext[:balance_constraints] = balance_constraints
     end
 
     @timed_step timings "storage_short_term" "- Adding intra-period short-term storage constraints" begin
@@ -432,10 +444,23 @@ function create_optimization_model!(connection, model, clustering_result)
             "SELECT * FROM intra_period_storage_capacity_constraint_view"
         )
         for row in rows(intraperiod_storage_capacity_data)
-            JuMP.set_upper_bound(
-                state_of_charge_intra[row.id, row.rep_period, row.timestep],
-                row.capacity_storage_energy
-            )
+            if row.investable && row.initial_units > 0
+                # Investing in storage scales the energy reservoir together with the
+                # power rating (a fixed-duration battery): the SoC cap grows in
+                # proportion to the total units, so storage expansion adds MWh as well
+                # as MW. Non-investable storage keeps a constant bound (the historical
+                # behaviour, since `invested_units` is then absent).
+                @constraint(model,
+                    state_of_charge_intra[row.id, row.rep_period, row.timestep] <=
+                    row.capacity_storage_energy *
+                    (row.initial_units + invested_units[row.id]) / row.initial_units
+                )
+            else
+                JuMP.set_upper_bound(
+                    state_of_charge_intra[row.id, row.rep_period, row.timestep],
+                    row.capacity_storage_energy
+                )
+            end
         end
     end
 

@@ -406,6 +406,7 @@ function greedy_convex_hull(
   mean_vector::Union{Vector{Float64},Nothing}=nothing,
   cache::Bool=true,
   tol::Float64=1e-2,
+  stats::Union{Nothing,Dict{Symbol,Any}}=nothing,
 )
   if initial_indices ≡ nothing
     if mean_vector ≡ nothing
@@ -425,6 +426,10 @@ function greedy_convex_hull(
   # otherwise it is recomputed.
   projection_cache = Dict{Int,Tuple{Vector{Float64},Float64}}()
   starting_index = length(initial_indices) + 1
+  # Cache accounting: per-outer-iteration hit/miss counts (so the hit-rate-vs-
+  # iteration curve and the total can be reported) when `stats` is provided.
+  hits_per_iter = Int[]
+  misses_per_iter = Int[]
   for _ ∈ starting_index:n_points
     max_distance = -Inf
     furthest_vector_index = nothing
@@ -434,6 +439,8 @@ function greedy_convex_hull(
     # Lipschitz constant of the projection objective's gradient.
     step_size = 1 / opnorm(hull_matrix, 2)^2
     last_added_vector = matrix[:, last(hull_indices)]
+    iter_hits = 0
+    iter_misses = 0
     # Soundness requires re-testing EVERY candidate against the newest
     # representative on EVERY outer iteration; do not skip candidates here.
     for column_index ∈ axes(matrix, 2)
@@ -446,23 +453,33 @@ function greedy_convex_hull(
          dot(target_vector - cached[1], last_added_vector - cached[1]) ≤ 0
         # Cached projection is still exact for the enlarged hull.
         d = cached[2]
+        iter_hits += 1
       else
         gradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
         x = projection_matrix * target_vector
-        x = projected_gradient_descent!(x; gradient, projection=project_onto_simplex, learning_rate=step_size, tol)
+        x, _ = projected_gradient_descent!(x; gradient, projection=project_onto_simplex, learning_rate=step_size, tol)
         projected_target = hull_matrix * x
         d = norm(projected_target - target_vector)
         projection_cache[column_index] = (projected_target, d)
+        iter_misses += 1
       end
       if d > max_distance
         max_distance = d
         furthest_vector_index = column_index
       end
     end
+    push!(hits_per_iter, iter_hits)
+    push!(misses_per_iter, iter_misses)
     if furthest_vector_index ≡ nothing
       throw(ArgumentError("Point not found"))
     end
     push!(hull_indices, furthest_vector_index)
+  end
+  if stats ≢ nothing
+    stats[:cache_hits] = get(stats, :cache_hits, 0) + sum(hits_per_iter)
+    stats[:cache_misses] = get(stats, :cache_misses, 0) + sum(misses_per_iter)
+    stats[:cache_hits_per_iter] = hits_per_iter
+    stats[:cache_misses_per_iter] = misses_per_iter
   end
   return hull_indices
 end
@@ -491,6 +508,8 @@ function select_representatives(
   n_periods::Int,
   method::Symbol;
   tol::Float64=1e-2,
+  cache::Bool=true,
+  stats::Union{Nothing,Dict{Symbol,Any}}=nothing,
   args...,
 )
   if method ≡ :k_means
@@ -505,8 +524,21 @@ function select_representatives(
     rp_matrix = matrix[:, kmedoids_result.medoids]
     assignments = kmedoids_result.assignments
     selected_indices = kmedoids_result.medoids
+  elseif method ≡ :hierarchical
+    # Agglomerative (Ward) clustering on the same Euclidean distances as
+    # k-medoids; each cluster's representative is its medoid (the member nearest
+    # the rest), so the representatives are real periods like the k-medoids/hull ones.
+    distance_matrix = pairwise(Euclidean(), matrix; dims=2)
+    assignments = cutree(hclust(distance_matrix; linkage=:ward); k=n_rp)
+    medoids = Vector{Int}(undef, n_rp)
+    for c ∈ 1:n_rp
+      members = findall(==(c), assignments)
+      medoids[c] = members[argmin([sum(@view distance_matrix[m, members]) for m ∈ members])]
+    end
+    rp_matrix = matrix[:, medoids]
+    selected_indices = medoids
   elseif method ≡ :convex_hull
-    hull_indices = greedy_convex_hull(matrix; n_points=n_rp, tol)
+    hull_indices = greedy_convex_hull(matrix; n_points=n_rp, tol, cache, stats)
     rp_matrix = matrix[:, hull_indices]
     assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
     selected_indices = hull_indices
@@ -514,7 +546,7 @@ function select_representatives(
     # Add a null vector as a column, run the convex-hull method initialized at
     # it, then drop it; the remaining positive weights sum to at most one.
     augmented = [zeros(size(matrix, 1), 1) matrix]
-    hull_indices = greedy_convex_hull(augmented; n_points=n_rp + 1, initial_indices=[1], tol)
+    hull_indices = greedy_convex_hull(augmented; n_points=n_rp + 1, initial_indices=[1], tol, cache, stats)
     popfirst!(hull_indices)
     hull_indices .-= 1
     rp_matrix = matrix[:, hull_indices]
@@ -525,7 +557,7 @@ function select_representatives(
     normalize!(normal_vector)
     projection_coefficients = [1.0 / dot(normal_vector, matrix[:, j]) for j ∈ axes(matrix, 2)]
     projected_matrix = [matrix[i, j] * projection_coefficients[j] for i ∈ axes(matrix, 1), j ∈ axes(matrix, 2)]
-    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol)
+    hull_indices = greedy_convex_hull(projected_matrix; n_points=n_rp, mean_vector=normal_vector, tol, cache, stats)
     rp_matrix = matrix[:, hull_indices]
     assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
     selected_indices = hull_indices
@@ -560,20 +592,19 @@ function original_space_centroids(matrix::AbstractMatrix{Float64}, assignments::
 end
 
 """
-    minmax_rescale(matrix, var_threshold) -> (scaled, keep)
+    minmax_rescale(matrix) -> (scaled, keep)
 
 Min-max normalize each row of `matrix` to `[0,1]` (row minimum → 0, row maximum →
-1), dropping rows whose across-period range is `≤ var_threshold` (constant rows
-carry no inter-period information and have no range to rescale — this also avoids a
-0/0). Returns the `scaled` matrix over the kept rows and the `keep` mask. Unlike the
-economic scaling, this is an affine per-row transform: it *centers* (subtracts the
-row minimum), so it is used only for selection/weight fitting, never for the profiles
-returned to the model.
+1), dropping rows that are constant across periods (zero range — they carry no
+inter-period information and would give a 0/0). Returns the `scaled` matrix over the
+kept rows and the `keep` mask. Unlike the economic scaling, this is an affine per-row
+transform: it *centers* (subtracts the row minimum), so it is used only for
+selection/weight fitting, never for the profiles returned to the model.
 """
-function minmax_rescale(matrix::AbstractMatrix{Float64}, var_threshold::Float64)
+function minmax_rescale(matrix::AbstractMatrix{Float64})
   row_min = vec(minimum(matrix, dims=2))
   row_range = vec(maximum(matrix, dims=2)) .- row_min
-  keep = row_range .> var_threshold
+  keep = row_range .> 0.0
   scaled = (matrix[keep, :] .- row_min[keep]) ./ row_range[keep]
   return scaled, keep
 end
@@ -603,18 +634,14 @@ Finds representative periods via data clustering. All distances are Euclidean.
   - `feature_scale`: optional economic normalization. When `nothing` (the default),
     clustering runs on the dimensionless profiles as-is. When a `Dict` mapping
     `(asset id, profile_type) => scale`, every feature row is multiplied by its
-    scale and rows that are constant across periods (range `≤ var_threshold`) are
-    dropped *for selection and weight fitting only* — the representative-period
-    profiles returned for the model are always reconstructed in the original,
-    unscaled units (see [`build_economic_feature_scale`](@ref)).
+    scale and rows that are constant across periods (zero range) are dropped *for
+    selection and weight fitting only* — the representative-period profiles returned
+    for the model are always reconstructed in the original, unscaled units (see
+    [`build_economic_feature_scale`](@ref)).
   - `minmax`: optional per-feature-row min-max normalization. When `true`, each
     feature row is rescaled to `[0,1]` (its minimum across periods → 0, its maximum
     → 1) for selection and weight fitting only; the returned profiles stay in the
     original units. Mutually exclusive with `feature_scale`.
-  - `var_threshold`: drop a feature row from the transformed selection space when
-    its *original dimensionless* profile varies by no more than this across periods
-    (default `0.0`, i.e. drop only exactly-constant rows). Scale-independent, and it
-    also guards the min-max rescale against a 0/0 on a constant row.
   - other named arguments can be provided; they are passed to the clustering method.
 """
 function find_representative_periods(
@@ -625,7 +652,7 @@ function find_representative_periods(
   tol::Float64=1e-2,
   feature_scale::Union{Nothing,AbstractDict}=nothing,
   minmax::Bool=false,
-  var_threshold::Float64=0.0,
+  cache::Bool=true,
   args...,
 )
   feature_scale ≡ nothing || !minmax ||
@@ -671,8 +698,11 @@ function find_representative_periods(
   # but always reconstruct the representative-period profiles in the original units
   # the model expects — only the *selection* and the fitted *weights* live in the
   # transformed space, never the profiles handed to the model.
+  # Selection diagnostics (greedy-hull cache hit/miss counts) accumulate here and
+  # are attached to the returned ClusteringResult.
+  selection_stats = Dict{Symbol,Any}()
   if feature_scale ≡ nothing && !minmax
-    rp_matrix, assignments, _ = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, args...)
+    rp_matrix, assignments, selected_indices = select_representatives(clustering_matrix, n_rp, n_periods, method; tol, cache, stats=selection_stats, args...)
     representative_profiles = rp_matrix
     selection_matrix = clustering_matrix
   else
@@ -683,24 +713,30 @@ function find_representative_periods(
       # hulls; the test uses the *original* variation, so it is scale-independent.
       scale_vector = economic_scale_vector(feature_scale, keys)
       row_range = vec(maximum(clustering_matrix, dims=2) .- minimum(clustering_matrix, dims=2))
-      keep = row_range .> var_threshold
+      keep = row_range .> 0.0
       selection_matrix = (scale_vector .* clustering_matrix)[keep, :]
     else
       # Min-max: rescale each row to [0,1] (its minimum across periods → 0, its
       # maximum → 1). Rows constant across periods have no range to rescale and are
-      # dropped (the same `var_threshold` test, which also avoids a 0/0).
-      selection_matrix, keep = minmax_rescale(clustering_matrix, var_threshold)
+      # dropped (which also avoids a 0/0).
+      selection_matrix, keep = minmax_rescale(clustering_matrix)
     end
     rp_matrix, assignments, selected_indices =
-      select_representatives(selection_matrix, n_rp, n_periods, method; tol, args...)
+      select_representatives(selection_matrix, n_rp, n_periods, method; tol, cache, stats=selection_stats, args...)
     # Original-unit representative profiles: the selected period columns for the
     # hull / k-medoids methods, or the original-space centroids of the transformed
     # clusters for k-means (whose representatives are synthetic, not columns).
     representative_profiles = selected_indices ≡ nothing ?
                               original_space_centroids(clustering_matrix, assignments, n_rp) :
                               clustering_matrix[:, selected_indices]
-    log_scaled_selection_diagnostics(keys.profile_type, keep, selection_matrix; var_threshold)
+    log_scaled_selection_diagnostics(keys.profile_type, keep, selection_matrix)
   end
+
+  # Record the nearest-representative assignment and the selected base-period
+  # indices (hull / k-medoids; `nothing` for synthetic k-means centroids) as
+  # clustering artifacts so they can be dumped without re-running the selection.
+  selection_stats[:assignments] = assignments
+  selection_stats[:selected_indices] = selected_indices
 
   # Fill in the weight matrix using the assignments
 
@@ -728,7 +764,9 @@ function find_representative_periods(
   # `selection_matrix`/`rp_matrix` are the space weights are fitted in: the original
   # profiles for `:unscaled` (where `selection_matrix == clustering_matrix`), the
   # scaled, pruned features for `:economic`.
-  return ClusteringResult(rp_df, weight_matrix, selection_matrix, rp_matrix)
+  result = ClusteringResult(rp_df, weight_matrix, selection_matrix, rp_matrix)
+  merge!(result.diagnostics, selection_stats)
+  return result
 end
 
 function cluster_using_experiment_data(experiment_data, connection)
@@ -774,6 +812,7 @@ function cluster_using_experiment_data(experiment_data, connection)
     tol=experiment_data.tol,
     feature_scale,
     minmax,
+    cache=experiment_data.cache,
     init=:kmcen
   )
 end

@@ -30,21 +30,37 @@ and `investments`. Profiles are normalized to `[0,1]`; demand/availability/inflo
 are scaled at use by `peak_demand` / `unit_capacity` / `peak_inflow`. All numeric
 values are rounded to three decimals (nothing here is measured more finely).
 
-The config CSV has columns `n_rep_periods, period_length, clustering_type,
-weight_type, niters, evaluation_type`. The first row (`1, <horizon>, …, none`) is
+The config CSV has required columns `n_rep_periods, period_length, clustering_type,
+weight_type, evaluation_type` and optional columns: `tol` (the PGD tolerance ε,
+default `0.01`), `normalization` (`unscaled` (default), `minmax`, or `economic`),
+and `cache` (the greedy-hull projection cache, default `true`; set `false` only for
+the cached-vs-uncached benchmark). `clustering_type` is one of `k_means`,
+`k_medoids`, `hierarchical`, or `hull`. The first row (`1, <horizon>, …, none`) is
 the unclustered reference; the remaining rows sweep clustering/weight types under
-the dataset's regret metric.
+the dataset's regret metric. Each run also records the environment (Julia/solver
+versions, machine, git commit) to `<outputs_dir>/environment.txt`.
 
 ## The datasets
 
-| Source | Dataset | Locations | Generators | Lines | Seasonal storage | Time series | Regret |
-|---|---|---|---|---|---|---|---|
-| TYNDP | gep | 20 countries | 125 | 43 | 0 | 8760 hourly | investment |
-| TYNDP | p2x | 32 countries | 297 | 91 | 47 | 8760 hourly | storage |
-| Sienna | 5bus | 5 buses | 10 | 7 | 2 | 8760 hourly | storage |
-| Sienna | 118bus | 118 buses | ~310 | 186 | 15 | 8760 hourly | storage |
-| gridmod | rts | 73 buses | ~205 | 120 | 20 | **105 408 (5-min)** | storage |
+Counts are exact. **Gen.** is the number of dispatchable/renewable generators and
+**excludes** the per-node energy-not-served (ENS) slack that every dataset carries
+(one pseudo-generator per node, priced at VOLL). **Batt.** is short-term
+(non-seasonal) storage; **Seas.** is seasonal storage (reservoirs / pumped hydro).
+**Conv.** is conversion assets (e.g. electrolyzers, SMR). **Inv.** is the number of
+investable assets.
 
+| Source | Dataset | Nodes | Gen. | Batt. | Seas. | Conv. | Lines | Inv. | Time series | Regret |
+|---|---|---|---|---|---|---|---|---|---|---|
+| TYNDP | gep | 20 | 106 | 0 | 0 | 0 | 44 | 106 | 8760 hourly | investment |
+| TYNDP | p2x | 32 | 165 | 25 | 47 | 31 | 92 | 0 | 8760 hourly | storage |
+| TYNDP | sep | 32 | 165 | 25 | 47 | 31 | 92 | 25 | 8760 hourly | investment |
+| Sienna | 5bus | 5 | 8 | 0 | 2 | 0 | 7 | 0 | 8760 hourly | storage |
+| Sienna | 118bus | 118 | 312 | 0 | 15 | 0 | 186 | 0 | 8760 hourly | storage |
+| gridmod | rts | 73 | 134 | 1 | 20 | 0 | 120 | 0 | 105 408 (5-min) | storage |
+
+- **sep** is the storage-expansion case: the same data as **p2x** (every file is a
+  symlink to `../p2x/`) but with the 25 batteries made investable, turning the
+  dispatch problem into a battery storage-expansion problem. See `sep/NOTES.md`.
 - **rts** is the long, high-resolution case: the full leap year at **5-minute**
   resolution (105 408 steps). Representative periods are days, but each day is
   288 five-minute steps, so unlike the other (hourly, 8760-step) datasets it

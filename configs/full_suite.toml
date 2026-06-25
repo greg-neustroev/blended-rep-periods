@@ -1,0 +1,9 @@
+# Full suite: every case study in one run.
+inputs = ["tyndp/gep", "tyndp/p2x", "tyndp/sep", "sienna/5bus", "sienna/118bus", "gridmod/rts"]
+
+master_seed = 382507
+n_seeds     = 10
+
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

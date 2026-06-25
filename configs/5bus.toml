@@ -1,0 +1,9 @@
+# Sienna 5-bus case study (also carries the sensitivity factorial).
+inputs = ["sienna/5bus"]
+
+master_seed = 382507
+n_seeds     = 10
+
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

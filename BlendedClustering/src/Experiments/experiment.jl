@@ -35,6 +35,7 @@ function run_experiment(
         clustering_result;
         weight_type=experiment_data.weight_type,
         tol=experiment_data.tol,
+        init=experiment_data.init,
     )
 
     projection_errors = clustering_result.rp_matrix * clustering_result.weight_matrix' - clustering_result.clustering_matrix
@@ -79,11 +80,12 @@ function run_experiment(
         model,
         evaluation_type == :none ? nothing : eval_model,
         final_projection_error,
+        clustering_result,
         time_to_preprocess,
         time_to_cluster,
         time_to_fit_weights,
         time_to_formulate_model,
         time_to_solve
     )
-    return result
+    return result, clustering_result
 end
