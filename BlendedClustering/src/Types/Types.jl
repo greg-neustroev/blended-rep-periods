@@ -32,6 +32,13 @@ const DEFAULT_PGD_TOL = 1e-2
 # representative-period profiles handed to the model stay in the original units.
 const DEFAULT_NORMALIZATION = :unscaled
 
+# Default inflow-integral weight λ used when a configuration CSV omits the optional
+# `inflow_integral_weight` column. `0.0` means the integrated-inflow rows are not
+# added, so the clustering matrix stays `[D; A; E]` and every existing result is
+# unchanged; a non-zero λ augments it to `[D; A; E; λ·E_int]`, stacking each inflow
+# asset's per-period total inflow energy (see `find_representative_periods`).
+const DEFAULT_INFLOW_INTEGRAL_WEIGHT = 0.0
+
 
 """
     read_run_data(path) -> DataFrame
@@ -41,7 +48,9 @@ into a `DataFrame`, checking that the required columns are present and convertin
 the categorical columns (`clustering_type`, `weight_type`, `evaluation_type`, and
 the optional `normalization`) to `Symbol`s. The projected gradient descent
 tolerance column `tol` is optional and defaults to `DEFAULT_PGD_TOL` when absent;
-the `normalization` column is optional and defaults to `DEFAULT_NORMALIZATION`.
+the `normalization` column is optional and defaults to `DEFAULT_NORMALIZATION`; the
+`inflow_integral_weight` column is optional and defaults to
+`DEFAULT_INFLOW_INTEGRAL_WEIGHT`.
 """
 function read_run_data(path)
     df = CSV.read(path, DataFrame)
@@ -80,6 +89,7 @@ struct ExperimentData
     normalization::Symbol
     cache::Bool
     init::Symbol
+    inflow_integral_weight::Float64
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -96,6 +106,12 @@ struct ExperimentData
         # `:moore_penrose`); optional, defaulting to `:auto` which keeps the
         # lower-error guess. Only the sensitivity sweep sets it explicitly.
         init = hasproperty(run_data_row, :init) ? Symbol(run_data_row.init) : :auto
+        # `inflow_integral_weight` (the weight λ on the integrated-inflow rows) is
+        # optional and defaults to off; only a non-zero value augments the clustering
+        # matrix with the per-period total-inflow rows.
+        inflow_integral_weight = hasproperty(run_data_row, :inflow_integral_weight) ?
+                                 Float64(run_data_row.inflow_integral_weight) :
+                                 DEFAULT_INFLOW_INTEGRAL_WEIGHT
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -109,6 +125,9 @@ struct ExperimentData
         ]
         if normalization ≠ DEFAULT_NORMALIZATION
             push!(name_parts, string(normalization))
+        end
+        if inflow_integral_weight ≠ DEFAULT_INFLOW_INTEGRAL_WEIGHT
+            push!(name_parts, "inflowint$(inflow_integral_weight)")
         end
         if !cache
             push!(name_parts, "nocache")
@@ -127,6 +146,7 @@ struct ExperimentData
             normalization,
             cache,
             init,
+            inflow_integral_weight,
             run_data_row.evaluation_type
         )
     end
