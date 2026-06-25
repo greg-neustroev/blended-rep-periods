@@ -1,23 +1,37 @@
 # Solver name (as written in a case-studies file) -> JuMP optimizer factory.
 const SOLVERS = Dict("gurobi" => Gurobi.Optimizer)
 
+# Each `inputs` entry selects a *sweep* CSV and a *data* directory. A bare string
+# uses the same id for both; a table `{sweep, data}` lets one sweep file target
+# another dataset's data and output namespace. Returns `(sweep, data)`.
+resolve_input(entry::AbstractString) = (entry, entry)
+function resolve_input(entry::AbstractDict)
+    sweep = entry["sweep"]
+    return (sweep, get(entry, "data", sweep))
+end
+
 """
     run_experiments(inputs::AbstractVector; seeds, optimizer=Gurobi.Optimizer,
                     inputs_dir="inputs", outputs_dir="outputs")
 
-Run every experiment for each dataset in `inputs`. For each input, the matching
-`<input>.csv` configuration (under `inputs_dir`) defines the parameter sweep:
-one experiment is run per (seed, configuration row) pair. Results are appended to
-`<outputs_dir>/<input>.csv` and the solved variables are written under
-`<outputs_dir>/<experiment name>/`.
+Run every experiment for each entry in `inputs`. Each entry selects a *sweep* CSV
+and a *data* directory, which default to the same identifier but may differ, so a
+separate sweep file (e.g. a sensitivity factorial) can target an existing dataset's
+data and **share its output namespace** — identical experiments are then recorded
+under the same name and skipped on resume rather than solved twice.
 
-  - `inputs`: dataset identifiers, e.g. `["tyndp/gep", "sienna/5bus"]`.
+Each entry is either:
+  - a string `"src/name"` — sweep `<inputs_dir>/src/name.csv`, data
+    `<inputs_dir>/src/name/`, results in `<outputs_dir>/src/name.csv`; or
+  - a table `{sweep = "...", data = "..."}` — the sweep CSV is `<sweep>.csv`, while
+    the data directory, output CSV, and experiment-name prefix all key off `data`.
+
   - `seeds`: random seeds to run each configuration with.
   - `optimizer`: a JuMP-compatible optimizer factory.
   - `inputs_dir`, `outputs_dir`: input/output root directories.
 """
 function run_experiments(
-    inputs::AbstractVector{<:AbstractString};
+    inputs::AbstractVector;
     seeds::AbstractVector{<:Integer},
     optimizer=Gurobi.Optimizer,
     inputs_dir::AbstractString="inputs",
@@ -26,19 +40,20 @@ function run_experiments(
     isdir(outputs_dir) || mkpath(outputs_dir)
     record_environment(outputs_dir)
 
-    for input in inputs
-        @info "Reading experiment configuration"
-        run_data = read_run_data(joinpath(inputs_dir, "$(input).csv"))
+    for entry in inputs
+        sweep, data = resolve_input(entry)
+        @info "Reading experiment configuration" sweep data
+        run_data = read_run_data(joinpath(inputs_dir, "$(sweep).csv"))
 
-        @info "Reading data shared across all experiments"
         connection = DBInterface.connect(DuckDB.DB, ":memory:")
-        output_file = joinpath(outputs_dir, "$(input).csv")
+        # Output CSV and experiment identity key off the DATA, not the sweep file, so
+        # a sensitivity sweep and the main sweep over the same data share results.
+        output_file = joinpath(outputs_dir, "$(data).csv")
         mkpath(dirname(output_file))
 
         # Resume support: skip any (experiment name, seed) already recorded in the
-        # output CSV so an interrupted chain picks up where it left off without
-        # re-solving finished runs. This is most valuable for the single-period
-        # reference, which is expensive and identical across the whole sweep.
+        # output CSV so an interrupted chain picks up where it left off, and so a
+        # sweep that overlaps an already-run one is not re-solved.
         completed = load_completed_runs(output_file)
 
         # Every configuration is run for every seed. Hull selection and the
@@ -46,14 +61,14 @@ function run_experiments(
         # identical across seeds — but wall-clock timing is not, so the repeats
         # supply the runtime variance needed for the runtime/Pareto error bars.
         for seed in seeds
-            experiments = [ExperimentData(row, input) for row in eachrow(run_data)]
+            experiments = [ExperimentData(row, data) for row in eachrow(run_data)]
             pending = [ed for ed in experiments if (ed.name, seed) ∉ completed]
             if isempty(pending)
                 @info "All experiments for seed $seed already completed; skipping"
                 continue
             end
             # Read the dataset once per seed, but only when something still needs running.
-            time_to_read = @elapsed read_data_from_dir(connection, joinpath(inputs_dir, input))
+            time_to_read = @elapsed read_data_from_dir(connection, joinpath(inputs_dir, data))
             for experiment_data in pending
                 model = Model(optimizer)
                 eval_model = Model(optimizer)

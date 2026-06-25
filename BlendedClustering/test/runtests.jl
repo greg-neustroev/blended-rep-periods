@@ -150,6 +150,21 @@ end
     end
   end
 
+  @testset "resolve_input + cross-sweep experiment identity" begin
+    ri = BC.Experiments.resolve_input
+    @test ri("tyndp/gep") == ("tyndp/gep", "tyndp/gep")
+    @test ri(Dict("sweep" => "tyndp/sens_gep", "data" => "tyndp/gep")) == ("tyndp/sens_gep", "tyndp/gep")
+    @test ri(Dict("sweep" => "x")) == ("x", "x")          # data defaults to sweep
+    # A sensitivity-sweep row and the matching main-sweep row produce the SAME
+    # experiment name when both key off the same data, so resume dedups them.
+    main = DataFrame(n_rep_periods=40, period_length=24, clustering_type=:hull,
+      weight_type=:convex, tol=0.01, evaluation_type=:investment_regret, normalization=:unscaled)
+    sens = DataFrame(n_rep_periods=40, period_length=24, clustering_type=:hull,
+      weight_type=:convex, tol=0.01, evaluation_type=:investment_regret, normalization=:unscaled, init=:auto)
+    @test ExperimentData(first(eachrow(main)), "tyndp/gep").name ==
+          ExperimentData(first(eachrow(sens)), "tyndp/gep").name
+  end
+
   @testset "load_completed_runs (resume support)" begin
     lcr = BC.Experiments.load_completed_runs
     mktempdir() do dir
