@@ -32,6 +32,13 @@ const DEFAULT_PGD_TOL = 1e-2
 # representative-period profiles handed to the model stay in the original units.
 const DEFAULT_NORMALIZATION = :unscaled
 
+# Default inflow-integral weight λ used when a configuration CSV omits the optional
+# `inflow_integral_weight` column. `0.0` means the integrated-inflow rows are not
+# added, so the clustering matrix stays `[D; A; E]` and every existing result is
+# unchanged; a non-zero λ augments it to `[D; A; E; λ·E_int]`, stacking each inflow
+# asset's per-period total inflow energy (see `find_representative_periods`).
+const DEFAULT_INFLOW_INTEGRAL_WEIGHT = 0.0
+
 
 """
     read_run_data(path) -> DataFrame
@@ -41,7 +48,9 @@ into a `DataFrame`, checking that the required columns are present and convertin
 the categorical columns (`clustering_type`, `weight_type`, `evaluation_type`, and
 the optional `normalization`) to `Symbol`s. The projected gradient descent
 tolerance column `tol` is optional and defaults to `DEFAULT_PGD_TOL` when absent;
-the `normalization` column is optional and defaults to `DEFAULT_NORMALIZATION`.
+the `normalization` column is optional and defaults to `DEFAULT_NORMALIZATION`; the
+`inflow_integral_weight` column is optional and defaults to
+`DEFAULT_INFLOW_INTEGRAL_WEIGHT`.
 """
 function read_run_data(path)
     df = CSV.read(path, DataFrame)
@@ -79,7 +88,7 @@ struct ExperimentData
     tol::Float64
     normalization::Symbol
     cache::Bool
-    init::Symbol
+    inflow_integral_weight::Float64
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -92,10 +101,12 @@ struct ExperimentData
         # `cache` toggles the greedy-hull projection cache; optional and on by
         # default. Setting it off is only for the cached-vs-uncached benchmark.
         cache = hasproperty(run_data_row, :cache) ? Bool(run_data_row.cache) : true
-        # `init` forces the PGD weight initialization (`:default` or
-        # `:moore_penrose`); optional, defaulting to `:auto` which keeps the
-        # lower-error guess. Only the sensitivity sweep sets it explicitly.
-        init = hasproperty(run_data_row, :init) ? Symbol(run_data_row.init) : :auto
+        # `inflow_integral_weight` (the weight λ on the integrated-inflow rows) is
+        # optional and defaults to off; only a non-zero value augments the clustering
+        # matrix with the per-period total-inflow rows.
+        inflow_integral_weight = hasproperty(run_data_row, :inflow_integral_weight) ?
+                                 Float64(run_data_row.inflow_integral_weight) :
+                                 DEFAULT_INFLOW_INTEGRAL_WEIGHT
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -110,11 +121,11 @@ struct ExperimentData
         if normalization ≠ DEFAULT_NORMALIZATION
             push!(name_parts, string(normalization))
         end
+        if inflow_integral_weight ≠ DEFAULT_INFLOW_INTEGRAL_WEIGHT
+            push!(name_parts, "inflowint$(inflow_integral_weight)")
+        end
         if !cache
             push!(name_parts, "nocache")
-        end
-        if init ≠ :auto
-            push!(name_parts, string(init))
         end
         name = join(name_parts, "_")
         return new(
@@ -126,7 +137,7 @@ struct ExperimentData
             tol,
             normalization,
             cache,
-            init,
+            inflow_integral_weight,
             run_data_row.evaluation_type
         )
     end
@@ -152,9 +163,9 @@ mutable struct ClusteringResult
     clustering_matrix::Union{Matrix{Float64},Nothing}
     rp_matrix::Union{Matrix{Float64},Nothing}
     # Free-form diagnostics captured while selecting representatives and fitting
-    # weights (greedy-hull cache hit/miss counts, per-fit PGD iteration counts,
-    # the chosen weight initialization). Populated in place so the experiment
-    # layer can record them without re-running the clustering.
+    # weights (greedy-hull cache hit/miss counts, per-fit PGD iteration counts).
+    # Populated in place so the experiment layer can record them without re-running
+    # the clustering.
     diagnostics::Dict{Symbol,Any}
 end
 
@@ -233,7 +244,6 @@ struct ExperimentResult
     frac_weight_sum_lt1::Union{Float64,Missing}
     weight_density::Union{Float64,Missing}
     # PGD / greedy-hull cache diagnostics.
-    weight_init::String
     pgd_total_iters::Int
     pgd_max_iters_per_fit::Int
     cache_hits::Int
@@ -293,7 +303,6 @@ struct ExperimentResult
         # PGD / greedy-hull cache diagnostics (populated in place during clustering
         # and weight fitting; absent for the single-period fast path or Dirac weights).
         diag = clustering_result.diagnostics
-        weight_init = haskey(diag, :weight_init) ? string(diag[:weight_init]) : "n/a"
         pgd_iters = get(diag, :pgd_iters, Int[])
         pgd_total_iters = isempty(pgd_iters) ? 0 : sum(pgd_iters)
         pgd_max_iters_per_fit = isempty(pgd_iters) ? 0 : maximum(pgd_iters)
@@ -359,7 +368,6 @@ struct ExperimentResult
             frac_weight_sum_gt1,
             frac_weight_sum_lt1,
             weight_density,
-            weight_init,
             pgd_total_iters,
             pgd_max_iters_per_fit,
             cache_hits,
@@ -411,7 +419,6 @@ Tables.columns(res::ExperimentResult) = (;
     frac_weight_sum_gt1=[res.frac_weight_sum_gt1],
     frac_weight_sum_lt1=[res.frac_weight_sum_lt1],
     weight_density=[res.weight_density],
-    weight_init=[res.weight_init],
     pgd_total_iters=[res.pgd_total_iters],
     pgd_max_iters_per_fit=[res.pgd_max_iters_per_fit],
     cache_hits=[res.cache_hits],

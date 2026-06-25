@@ -194,7 +194,6 @@ function fit_rep_period_weights!(
   rp_matrix::Matrix{Float64};
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
-  init::Symbol=:auto,
   diagnostics::Union{Nothing,Dict{Symbol,Any}}=nothing,
 )
   # Determine the appropriate projection method
@@ -218,46 +217,30 @@ function fit_rep_period_weights!(
   end
 
   n_periods = size(clustering_matrix, 2)
-  n_rp = size(rp_matrix, 2)
 
   is_sparse = issparse(weight_matrix)
 
-  default_weight_matrix = weight_matrix' |> Matrix{Float64}
+  # Initial guess: the projected default weights (the seed passed in). The
+  # Moore-Penrose least-squares alternative (and the auto-selector that chose
+  # between them) was removed — it left the clustering-space projection error
+  # essentially unchanged but produced markedly worse storage-regret trajectories,
+  # and the selector always kept this default anyway.
+  initial_weight_matrix = weight_matrix' |> Matrix{Float64}
   if weight_type ≡ :conical_bounded
-    # A zero column needs to be added to the initial weight matrix
-    default_weight_matrix = vcat(zeros(1, size(default_weight_matrix, 2)), default_weight_matrix)
+    # A zero column needs to be added to the initial weight matrix.
+    initial_weight_matrix = vcat(zeros(1, size(initial_weight_matrix, 2)), initial_weight_matrix)
   end
-  for col in eachcol(default_weight_matrix)
+  for col in eachcol(initial_weight_matrix)
     col .= projection(col)
   end
-  # Moore-Penrose pseudoinverse (R†): the least-squares initial guess. Using
-  # `pinv` rather than `\` stays well-defined when `rp_matrix` is rank-deficient
-  # (e.g. the zero-augmented column in the sub-unit conic case).
-  moore_penrose_weight_matrix = pinv(rp_matrix) * clustering_matrix
-  for col in eachcol(moore_penrose_weight_matrix)
-    col .= projection(col)
-  end
-  # check which is the better initial guess and use it
-  default_weight_projection_error = sum((rp_matrix * default_weight_matrix - clustering_matrix) .^ 2)
-  moore_penrose_projection_error = sum((rp_matrix * moore_penrose_weight_matrix - clustering_matrix) .^ 2)
-  # Pick the initial guess. `:auto` keeps the lower-error of the two; `:default`
-  # and `:moore_penrose` force one (used by the sensitivity sweep).
-  use_default_init = if init ≡ :default
-    true
-  elseif init ≡ :moore_penrose
-    false
-  else
-    default_weight_projection_error <= moore_penrose_projection_error
-  end
-  initial_weight_matrix = use_default_init ? default_weight_matrix : moore_penrose_weight_matrix
 
   # Principled PGD step size: 1 / L with L = σ_max(rp_matrix)^2, the Lipschitz
   # constant of the projection objective's gradient.
   step_size = 1 / opnorm(rp_matrix, 2)^2
 
   # Record per-fit PGD iteration counts (one entry per base period that is
-  # actually fitted, i.e. not already within `tol`) and which initial guess won,
-  # so the observed N(ε) range and initialization can be reported without re-running.
+  # actually fitted, i.e. not already within `tol`), so the observed N(ε) range
+  # can be reported without re-running.
   pgd_iters = Int[]
 
   for period ∈ 1:n_periods
@@ -300,7 +283,6 @@ function fit_rep_period_weights!(
     weight_matrix[period, 1:length(x)] = x
   end
   if diagnostics ≢ nothing
-    diagnostics[:weight_init] = use_default_init ? :default : :moore_penrose
     diagnostics[:pgd_iters] = pgd_iters
   end
   return weight_matrix
@@ -332,7 +314,6 @@ function fit_rep_period_weights!(
   clustering_result::ClusteringResult;
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
-  init::Symbol=:auto,
 )
   fit_rep_period_weights!(
     clustering_result.weight_matrix,
@@ -340,7 +321,6 @@ function fit_rep_period_weights!(
     clustering_result.rp_matrix;
     weight_type,
     tol,
-    init,
     diagnostics=clustering_result.diagnostics,
   )
 end
