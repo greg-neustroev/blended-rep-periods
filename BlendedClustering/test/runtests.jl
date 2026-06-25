@@ -183,7 +183,8 @@ end
     main = DataFrame(n_rep_periods=40, period_length=24, clustering_type=:hull,
       weight_type=:convex, tol=0.01, evaluation_type=:investment_regret, normalization=:unscaled)
     sens = DataFrame(n_rep_periods=40, period_length=24, clustering_type=:hull,
-      weight_type=:convex, tol=0.01, evaluation_type=:investment_regret, normalization=:unscaled, init=:auto)
+      weight_type=:convex, tol=0.01, evaluation_type=:investment_regret, normalization=:unscaled,
+      inflow_integral_weight=0.0)
     @test ExperimentData(first(eachrow(main)), "tyndp/gep").name ==
           ExperimentData(first(eachrow(sens)), "tyndp/gep").name
   end
