@@ -8,7 +8,6 @@ n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,norm
 10,24,hull,conical,0.01,investment_regret,unscaled,auto
 10,24,hull,conical,0.01,investment_regret,unscaled,default
 10,24,hull,conical,0.01,investment_regret,unscaled,moore_penrose
-10,24,hull,conical,0.1,investment_regret,unscaled,auto
 10,24,hull,convex,0.00001,investment_regret,unscaled,auto
 10,24,hull,convex,0.0001,investment_regret,unscaled,auto
 10,24,hull,convex,0.001,investment_regret,unscaled,auto
@@ -17,7 +16,6 @@ n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,norm
 10,24,hull,convex,0.01,investment_regret,unscaled,auto
 10,24,hull,convex,0.01,investment_regret,unscaled,default
 10,24,hull,convex,0.01,investment_regret,unscaled,moore_penrose
-10,24,hull,convex,0.1,investment_regret,unscaled,auto
 20,24,hull,conical,0.00001,investment_regret,unscaled,auto
 20,24,hull,conical,0.0001,investment_regret,unscaled,auto
 20,24,hull,conical,0.001,investment_regret,unscaled,auto
@@ -26,7 +24,6 @@ n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,norm
 20,24,hull,conical,0.01,investment_regret,unscaled,auto
 20,24,hull,conical,0.01,investment_regret,unscaled,default
 20,24,hull,conical,0.01,investment_regret,unscaled,moore_penrose
-20,24,hull,conical,0.1,investment_regret,unscaled,auto
 20,24,hull,convex,0.00001,investment_regret,unscaled,auto
 20,24,hull,convex,0.0001,investment_regret,unscaled,auto
 20,24,hull,convex,0.001,investment_regret,unscaled,auto
@@ -35,7 +32,6 @@ n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,norm
 20,24,hull,convex,0.01,investment_regret,unscaled,auto
 20,24,hull,convex,0.01,investment_regret,unscaled,default
 20,24,hull,convex,0.01,investment_regret,unscaled,moore_penrose
-20,24,hull,convex,0.1,investment_regret,unscaled,auto
 40,24,hull,conical,0.00001,investment_regret,unscaled,auto
 40,24,hull,conical,0.0001,investment_regret,unscaled,auto
 40,24,hull,conical,0.001,investment_regret,unscaled,auto
@@ -44,7 +40,6 @@ n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,norm
 40,24,hull,conical,0.01,investment_regret,unscaled,auto
 40,24,hull,conical,0.01,investment_regret,unscaled,default
 40,24,hull,conical,0.01,investment_regret,unscaled,moore_penrose
-40,24,hull,conical,0.1,investment_regret,unscaled,auto
 40,24,hull,convex,0.00001,investment_regret,unscaled,auto
 40,24,hull,convex,0.0001,investment_regret,unscaled,auto
 40,24,hull,convex,0.001,investment_regret,unscaled,auto
@@ -53,7 +48,6 @@ n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,norm
 40,24,hull,convex,0.01,investment_regret,unscaled,auto
 40,24,hull,convex,0.01,investment_regret,unscaled,default
 40,24,hull,convex,0.01,investment_regret,unscaled,moore_penrose
-40,24,hull,convex,0.1,investment_regret,unscaled,auto
 80,24,hull,conical,0.00001,investment_regret,unscaled,auto
 80,24,hull,conical,0.0001,investment_regret,unscaled,auto
 80,24,hull,conical,0.001,investment_regret,unscaled,auto
@@ -62,7 +56,6 @@ n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,norm
 80,24,hull,conical,0.01,investment_regret,unscaled,auto
 80,24,hull,conical,0.01,investment_regret,unscaled,default
 80,24,hull,conical,0.01,investment_regret,unscaled,moore_penrose
-80,24,hull,conical,0.1,investment_regret,unscaled,auto
 80,24,hull,convex,0.00001,investment_regret,unscaled,auto
 80,24,hull,convex,0.0001,investment_regret,unscaled,auto
 80,24,hull,convex,0.001,investment_regret,unscaled,auto
@@ -71,4 +64,3 @@ n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,norm
 80,24,hull,convex,0.01,investment_regret,unscaled,auto
 80,24,hull,convex,0.01,investment_regret,unscaled,default
 80,24,hull,convex,0.01,investment_regret,unscaled,moore_penrose
-80,24,hull,convex,0.1,investment_regret,unscaled,auto
