@@ -25,6 +25,8 @@ const SOLUTION_VARIABLES = [
     (:state_of_charge_inter_0, Symbol[]),
     (:spillage, [:rep_period, :timestep]),
     (:borrow, [:rep_period, :timestep]),
+    (:soc_band_over, [:period]),
+    (:soc_band_under, [:period]),
     (:flow, [:rep_period, :timestep]),
 ]
 

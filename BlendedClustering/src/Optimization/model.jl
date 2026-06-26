@@ -69,6 +69,14 @@ function create_optimization_model!(connection, model, clustering_result)
         @variable(model, state_of_charge_inter[S_seas, D] ≥ 0)
         @variable(model, spillage[S_seas, R, H] ≥ 0)
         @variable(model, borrow[S_seas, R, H] ≥ 0)
+        # Elastic slacks on the inter-period state-of-charge band (see the
+        # `soc_cap_inter` block): `soc_band_over` absorbs over-shoot above the upper
+        # level, `soc_band_under` absorbs under-shoot below the lower level. They make
+        # the seasonal band a penalised soft constraint rather than a hard one, so the
+        # reduced model is feasible-by-construction for any weight class (a conical
+        # prolongation that over-scales the band can no longer make it infeasible).
+        @variable(model, soc_band_over[S_seas, D] ≥ 0)
+        @variable(model, soc_band_under[S_seas, D] ≥ 0)
         @variable(model, flow[L, R, H])
     end
 
@@ -129,8 +137,27 @@ function create_optimization_model!(connection, model, clustering_result)
             end
         end
 
+        # Penalty on the elastic inter-period state-of-charge band. The band slack is
+        # indexed per base period d (not per representative period), so its per-unit
+        # price is `operations_weight * borrow_cost` — exactly the per-base-period rate
+        # at which `borrow` is charged (rp_weight already folds operations_weight and
+        # the column sum of W into the intra-period borrow). At this rate the penalty
+        # is an *exact* penalty: violating the band to free up a unit of stored energy
+        # never beats the genuine alternatives (whose marginal value is bounded by the
+        # borrow backstop at VOLL), so feasible models leave the slacks at zero and are
+        # unchanged, while an otherwise-infeasible band reports finite regret instead.
+        @expression(model, cost_of_soc_band, AffExpr(0.0))
+        soc_band_cost_data = run_query("SELECT * FROM borrow_cost_objective_view")
+        for row in rows(soc_band_cost_data)
+            w = operations_weight * row.borrow_cost
+            for d in D
+                add_to_expression!(cost_of_soc_band, w, soc_band_over[row.id, d])
+                add_to_expression!(cost_of_soc_band, w, soc_band_under[row.id, d])
+            end
+        end
+
         # Finally, formulate the objective function as the sum of the costs
-        @objective(model, Min, cost_of_investment + cost_of_operations + cost_of_spillage + cost_of_borrow)
+        @objective(model, Min, cost_of_investment + cost_of_operations + cost_of_spillage + cost_of_borrow + cost_of_soc_band)
     end
 
     @info "Creating constraints"
@@ -465,17 +492,32 @@ function create_optimization_model!(connection, model, clustering_result)
     end
 
     @timed_step timings "soc_cap_inter" "- Adding inter-period maximum state of charge constraints" begin
+        # The band on the inter-period state of charge is enforced *softly*: rather
+        # than hard variable bounds, the level may breach the band by paying the
+        # `cost_of_soc_band` penalty through the elastic slacks `soc_band_under`
+        # (below the lower level) and `soc_band_over` (above the upper level). The
+        # variable keeps its physical `≥ 0` floor (a deficit there is met by the
+        # intra-period `borrow` slack, never infeasible); only the band's min/max
+        # *levels* are relaxed. That is the single thing a conical prolongation can
+        # over-scale into infeasibility, so softening it makes the model feasible for
+        # any weight class while the exact penalty leaves feasible cells untouched.
         interperiod_storage_capacity_data = run_query(
             "SELECT * FROM inter_period_storage_capacity_constraint_view"
         )
         for row in rows(interperiod_storage_capacity_data)
-            JuMP.set_lower_bound(
-                state_of_charge_inter[row.id, row.period],
+            @constraint(model,
+                state_of_charge_inter[row.id, row.period]
+                ≥
                 row.min_storage_level * row.capacity_storage_energy
+                -
+                soc_band_under[row.id, row.period]
             )
-            JuMP.set_upper_bound(
-                state_of_charge_inter[row.id, row.period],
+            @constraint(model,
+                state_of_charge_inter[row.id, row.period]
+                ≤
                 row.max_storage_level * row.capacity_storage_energy
+                +
+                soc_band_over[row.id, row.period]
             )
         end
     end

@@ -274,6 +274,7 @@ struct ExperimentResult
     cost_of_operations::Union{Float64,Missing}
     cost_of_spillage::Union{Float64,Missing}
     cost_of_borrow::Union{Float64,Missing}
+    cost_of_soc_band::Union{Float64,Missing}
     n_variables::Int
     n_constraints::Int
     # Evaluation (full-horizon) model: regret numerator, cost decomposition, size.
@@ -283,10 +284,12 @@ struct ExperimentResult
     eval_cost_of_operations::Union{Float64,Missing}
     eval_cost_of_spillage::Union{Float64,Missing}
     eval_cost_of_borrow::Union{Float64,Missing}
+    eval_cost_of_soc_band::Union{Float64,Missing}
     eval_n_variables::Int
     eval_n_constraints::Int
     total_spillage::Float64
     total_borrow::Float64
+    total_soc_band::Float64
     # Runtime breakdown.
     time_to_preprocess::Float64
     time_to_cluster::Float64
@@ -338,6 +341,7 @@ struct ExperimentResult
         cost_of_operations = _solved_value(solved_model, :cost_of_operations)
         cost_of_spillage = _solved_value(solved_model, :cost_of_spillage)
         cost_of_borrow = _solved_value(solved_model, :cost_of_borrow)
+        cost_of_soc_band = _solved_value(solved_model, :cost_of_soc_band)
         n_variables = _n_variables(solved_model)
         n_constraints = _n_constraints(solved_model)
 
@@ -355,6 +359,7 @@ struct ExperimentResult
         eval_cost_of_operations = _solved_value(eval_model, :cost_of_operations)
         eval_cost_of_spillage = _solved_value(eval_model, :cost_of_spillage)
         eval_cost_of_borrow = _solved_value(eval_model, :cost_of_borrow)
+        eval_cost_of_soc_band = _solved_value(eval_model, :cost_of_soc_band)
         eval_n_variables = _n_variables(eval_model)
         eval_n_constraints = _n_constraints(eval_model)
         total_spillage = if !isnothing(eval_model) && haskey(eval_model, :spillage) && !isempty(eval_model[:spillage])
@@ -364,6 +369,14 @@ struct ExperimentResult
         end
         total_borrow = if !isnothing(eval_model) && haskey(eval_model, :borrow) && !isempty(eval_model[:borrow])
             value.(eval_model[:borrow]) |> sum
+        else
+            0.0
+        end
+        # Total inter-period band violation (over- plus under-shoot) in the eval
+        # model: the physical seasonal-band breach the soft relaxation absorbed.
+        total_soc_band = if !isnothing(eval_model) &&
+                            haskey(eval_model, :soc_band_over) && !isempty(eval_model[:soc_band_over])
+            (value.(eval_model[:soc_band_over]) |> sum) + (value.(eval_model[:soc_band_under]) |> sum)
         else
             0.0
         end
@@ -398,6 +411,7 @@ struct ExperimentResult
             cost_of_operations,
             cost_of_spillage,
             cost_of_borrow,
+            cost_of_soc_band,
             n_variables,
             n_constraints,
             evaluation_termination_status,
@@ -406,10 +420,12 @@ struct ExperimentResult
             eval_cost_of_operations,
             eval_cost_of_spillage,
             eval_cost_of_borrow,
+            eval_cost_of_soc_band,
             eval_n_variables,
             eval_n_constraints,
             total_spillage,
             total_borrow,
+            total_soc_band,
             time_to_preprocess,
             time_to_cluster,
             time_to_fit_weights,
@@ -450,6 +466,7 @@ Tables.columns(res::ExperimentResult) = (;
     cost_of_operations=[res.cost_of_operations],
     cost_of_spillage=[res.cost_of_spillage],
     cost_of_borrow=[res.cost_of_borrow],
+    cost_of_soc_band=[res.cost_of_soc_band],
     n_variables=[res.n_variables],
     n_constraints=[res.n_constraints],
     evaluation_termination_status=[res.evaluation_termination_status],
@@ -458,10 +475,12 @@ Tables.columns(res::ExperimentResult) = (;
     eval_cost_of_operations=[res.eval_cost_of_operations],
     eval_cost_of_spillage=[res.eval_cost_of_spillage],
     eval_cost_of_borrow=[res.eval_cost_of_borrow],
+    eval_cost_of_soc_band=[res.eval_cost_of_soc_band],
     eval_n_variables=[res.eval_n_variables],
     eval_n_constraints=[res.eval_n_constraints],
     total_spillage=[res.total_spillage],
     total_borrow=[res.total_borrow],
+    total_soc_band=[res.total_soc_band],
     time_to_preprocess=[res.time_to_preprocess],
     time_to_cluster=[res.time_to_cluster],
     time_to_fit_weights=[res.time_to_fit_weights],
