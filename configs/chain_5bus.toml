@@ -1,0 +1,22 @@
+# Signed chain-weight split (W^op / W^ch) on sienna/5bus.
+#
+# Re-runs the fix_every methods with `chain_weights = true`: the operational weights
+# W^op keep their existing PGD fit (objective + ramping), while the storage chain uses
+# a separate signed, closed-form W^ch fit to the per-period net-inflow-energy
+# increments (pseudoinverse, no PGD). The soft inter-period storage band keeps the
+# signed chain well-posed (any excursion is priced through the spill/borrow + band
+# slacks rather than going infeasible).
+#
+# Shares the `sienna/5bus_fixevery` data/output namespace so the chain-on rows
+# (suffix `_chain`) land alongside the chain-off baseline in
+# outputs/sienna/5bus_fixevery.csv for a direct regret comparison. Same single seed.
+seeds = [653657]
+
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"
+
+# Table form must come last: every key after `[[inputs]]` would otherwise nest into it.
+[[inputs]]
+sweep = "sienna/5bus_chain"
+data  = "sienna/5bus_fixevery"
