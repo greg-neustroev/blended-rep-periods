@@ -39,6 +39,14 @@ const DEFAULT_NORMALIZATION = :unscaled
 # asset's per-period total inflow energy (see `find_representative_periods`).
 const DEFAULT_INFLOW_INTEGRAL_WEIGHT = 0.0
 
+# Default storage-regret fixing cadence used when a configuration CSV omits the
+# optional `fix_every` column. `1` pins every base-period boundary state of charge
+# in the full-horizon evaluation model (the original, strictest grading); a coarser
+# `k > 1` pins only every k-th boundary so the full model re-optimizes the storage
+# trajectory between checkpoints (see `evaluate_solution!`). Ignored for any
+# `evaluation_type` other than `:storage_regret`.
+const DEFAULT_FIX_EVERY = 1
+
 
 """
     read_run_data(path) -> DataFrame
@@ -50,7 +58,8 @@ the optional `normalization`) to `Symbol`s. The projected gradient descent
 tolerance column `tol` is optional and defaults to `DEFAULT_PGD_TOL` when absent;
 the `normalization` column is optional and defaults to `DEFAULT_NORMALIZATION`; the
 `inflow_integral_weight` column is optional and defaults to
-`DEFAULT_INFLOW_INTEGRAL_WEIGHT`.
+`DEFAULT_INFLOW_INTEGRAL_WEIGHT`; the `fix_every` column is optional and defaults to
+`DEFAULT_FIX_EVERY`.
 """
 function read_run_data(path)
     df = CSV.read(path, DataFrame)
@@ -89,6 +98,7 @@ struct ExperimentData
     normalization::Symbol
     cache::Bool
     inflow_integral_weight::Float64
+    fix_every::Int
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -107,6 +117,10 @@ struct ExperimentData
         inflow_integral_weight = hasproperty(run_data_row, :inflow_integral_weight) ?
                                  Float64(run_data_row.inflow_integral_weight) :
                                  DEFAULT_INFLOW_INTEGRAL_WEIGHT
+        # `fix_every` (the storage-regret fixing cadence k) is optional and defaults
+        # to pinning every boundary; only a coarser cadence relaxes the grading.
+        fix_every = hasproperty(run_data_row, :fix_every) ?
+                    Int(run_data_row.fix_every) : DEFAULT_FIX_EVERY
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -124,6 +138,9 @@ struct ExperimentData
         if inflow_integral_weight ≠ DEFAULT_INFLOW_INTEGRAL_WEIGHT
             push!(name_parts, "inflowint$(inflow_integral_weight)")
         end
+        if fix_every ≠ DEFAULT_FIX_EVERY
+            push!(name_parts, "fixevery$(fix_every)")
+        end
         if !cache
             push!(name_parts, "nocache")
         end
@@ -138,6 +155,7 @@ struct ExperimentData
             normalization,
             cache,
             inflow_integral_weight,
+            fix_every,
             run_data_row.evaluation_type
         )
     end
@@ -230,6 +248,7 @@ struct ExperimentResult
     weight_type::Symbol
     normalization::Symbol
     tol::Float64
+    fix_every::Int
     # Clustering geometry / quality.
     projection_error::Float64
     sigma_max::Union{Float64,Missing}
@@ -357,6 +376,7 @@ struct ExperimentResult
             weight_type,
             data.normalization,
             data.tol,
+            data.fix_every,
             projection_error,
             sigma_max,
             sigma_min,
@@ -408,6 +428,7 @@ Tables.columns(res::ExperimentResult) = (;
     weight_type=[string(res.weight_type)],
     normalization=[string(res.normalization)],
     tol=[res.tol],
+    fix_every=[res.fix_every],
     projection_error=[res.projection_error],
     sigma_max=[res.sigma_max],
     sigma_min=[res.sigma_min],

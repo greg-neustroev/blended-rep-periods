@@ -64,7 +64,8 @@ function run_experiment(
         # decision variables fixed to the values from the clustering model
         # to get the true objective value.
         @info styled"{bold:Evaluating the model}"
-        evaluate_solution!(connection, model, eval_model, period_length, evaluation_type)
+        evaluate_solution!(connection, model, eval_model, period_length, evaluation_type;
+                           fix_every=experiment_data.fix_every)
     else
         JuMP.compute_conflict!(model)
         iis_model, _ = JuMP.copy_conflict(model)
