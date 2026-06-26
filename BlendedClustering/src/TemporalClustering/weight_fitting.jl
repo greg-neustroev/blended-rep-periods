@@ -324,3 +324,43 @@ function fit_rep_period_weights!(
     diagnostics=clustering_result.diagnostics,
   )
 end
+
+"""
+  fit_chain_weights(increment_matrix, selected_indices) -> Matrix{Float64}
+
+Fit the signed "chain" weights `W^ch` used by the inter-period storage chain
+(the prolongation role of the weights). Unlike the operational weights, which
+solve the constrained projection (4) per period with projected gradient descent,
+`W^ch` solves the *same* least-squares projection on the storage-increment data
+`increment_matrix` over the **unconstrained (signed)** domain, for which the
+minimiser is the closed-form pseudoinverse — no PGD.
+
+`increment_matrix` `G` has one row per seasonal-storage asset and one column per
+base period; column `g_d` is period `d`'s net storage-increment proxy (per-period
+net inflow energy). `selected_indices` are the base-period indices chosen as
+representatives (`G_R = G[:, selected_indices]`), in representative-period order.
+
+Each asset row of `G` is first centred to net zero over the year. That places `G`
+on the cyclically closed manifold `1ᵀG = 0`, on which the unconstrained optimum
+automatically satisfies operator-level closure — the column sums of `W^ch` vanish,
+`1ᵀW^ch = 0` — so the reconstructed inter-period trajectory returns to its start
+(constraint (2k)) for any intra-period solution, with no constrained solve needed.
+
+Returns `W^ch` as a dense `n_base_periods × n_rp` matrix (the same shape and RP
+ordering as the operational `weight_matrix`), so it drops straight into the chain
+constraints. The fit is exact for period `d` when `g_d ∈ col(G_R)`; otherwise the
+pseudoinverse returns the minimum-norm least-squares blend.
+"""
+function fit_chain_weights(
+  increment_matrix::AbstractMatrix{Float64},
+  selected_indices::AbstractVector{<:Integer},
+)
+  # Centre each asset row to net-zero over the year (cyclic closure): 1ᵀG = 0.
+  n_periods = size(increment_matrix, 2)
+  G = increment_matrix .- sum(increment_matrix; dims=2) ./ n_periods
+  G_R = G[:, selected_indices]
+  # Signed, unconstrained least squares per base period: w^ch_d = G_R⁺ g_d, i.e.
+  # W^ch = (G_R⁺ G)ᵀ. `pinv` gives the minimum-norm solution when G_R is rank
+  # deficient, so the fit degrades gracefully rather than failing.
+  return Matrix{Float64}((pinv(G_R) * G)')
+end

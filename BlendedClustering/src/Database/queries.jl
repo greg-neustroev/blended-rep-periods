@@ -39,6 +39,18 @@ function count_profile_periods(connection)
 end
 
 """
+    get_inflow_peaks(connection) -> Dict{String,Float64}
+
+Return the peak inflow `E^max_s` of every seasonal-storage asset, keyed by asset id.
+Used to scale the per-period inflow profile into physical net-inflow energy when
+building the storage-increment data for the signed chain-weight fit.
+"""
+function get_inflow_peaks(connection)
+    result = DBInterface.execute(connection, "SELECT id, peak_inflow FROM seasonal_storage_assets")
+    return Dict(string(row.id) => Float64(row.peak_inflow) for row in result)
+end
+
+"""
     get_single_period_profiles(connection) -> DataFrame
 
 Return the profile data relabelled as a single representative period (`rep_period`

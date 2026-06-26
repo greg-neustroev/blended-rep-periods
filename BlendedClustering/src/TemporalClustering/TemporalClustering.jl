@@ -16,7 +16,7 @@ using SparseArrays
 using Statistics
 
 export find_representative_periods, split_into_periods!
-export fit_rep_period_weights!, projected_gradient_descent!, project_onto_simplex
+export fit_rep_period_weights!, fit_chain_weights, projected_gradient_descent!, project_onto_simplex
 export cluster_using_experiment_data
 export build_economic_feature_scale
 

@@ -57,6 +57,17 @@ function create_optimization_model!(connection, model, clustering_result)
         # Compute the representative period weights in the operations costs
         rp_weight = sum(clustering_result.weight_matrix, dims=1)
         rp_weight .*= operations_weight
+
+        # The inter-period storage chain reconstructs each base period's seasonal
+        # storage increment from the representatives — the "prolongation" role of the
+        # weights. When a separate signed chain matrix W^ch was fit (chain split), it is
+        # used *only* there; the objective/aggregation (rp_weight above) and the
+        # inter-period ramping keep the operational W^op (`weight_matrix`). With no split
+        # the chain reuses `weight_matrix`, exactly the historical single-matrix model.
+        # Both matrices share `rp_matrix`/`R`, so they are indexed identically.
+        chain_weight_matrix = clustering_result.chain_weight_matrix ≡ nothing ?
+                              clustering_result.weight_matrix :
+                              clustering_result.chain_weight_matrix
     end
 
     @timed_step timings "variables" "Creating variables" begin
@@ -337,7 +348,7 @@ function create_optimization_model!(connection, model, clustering_result)
             state_of_charge_inter[s, 1] - state_of_charge_inter_0[s]
             ==
             sum(
-                clustering_result.weight_matrix[1, r]
+                chain_weight_matrix[1, r]
                 *
                 (state_of_charge_intra[s, r, H[end]] - state_of_charge_intra_0[s, r])
                 for r in R
@@ -347,7 +358,7 @@ function create_optimization_model!(connection, model, clustering_result)
             state_of_charge_inter[s, d] - state_of_charge_inter[s, d-1]
             ==
             sum(
-                clustering_result.weight_matrix[d, r]
+                chain_weight_matrix[d, r]
                 *
                 (state_of_charge_intra[s, r, H[end]] - state_of_charge_intra_0[s, r])
                 for r in R
@@ -377,7 +388,7 @@ function create_optimization_model!(connection, model, clustering_result)
                 state_of_charge_inter[row.id, D[end]]
                 ==
                 sum(
-                    clustering_result.weight_matrix[D[end], r]
+                    chain_weight_matrix[D[end], r]
                     *
                     state_of_charge_intra[row.id, r, H[end]]
                     for r in R

@@ -196,6 +196,47 @@ end
     end
   end
 
+  @testset "experiment config schema: chain_weights default off / suffixes name" begin
+    mktempdir() do dir
+      # Absent column -> chain split off, name unchanged.
+      path = joinpath(dir, "run.csv")
+      open(path, "w") do io
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,evaluation_type")
+        println(io, "5,24,hull,convex,storage_regret")
+      end
+      ed = ExperimentData(first(eachrow(read_run_data(path))), "gep")
+      @test ed.chain_weights == BC.DEFAULT_CHAIN_WEIGHTS
+      @test ed.name == "gep_5_24_hull_convex_$(BC.DEFAULT_PGD_TOL)"
+      # Explicit chain split -> field set and name carries the `_chain` suffix.
+      path2 = joinpath(dir, "run2.csv")
+      open(path2, "w") do io
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,chain_weights")
+        println(io, "5,24,hull,convex,0.01,storage_regret,true")
+      end
+      ed2 = ExperimentData(first(eachrow(read_run_data(path2))), "gep")
+      @test ed2.chain_weights == true
+      @test ed2.name == "gep_5_24_hull_convex_0.01_chain"
+    end
+  end
+
+  @testset "fit_chain_weights: signed closed-form chain fit" begin
+    fcw = BC.TemporalClustering.fit_chain_weights
+    # 2 assets x 6 base periods, 3 representatives.
+    G = [1.0 3.0 2.0 5.0 0.0 4.0;
+         2.0 1.0 0.0 3.0 1.0 2.0]
+    sel = [1, 4, 6]
+    W = fcw(G, sel)
+    @test size(W) == (6, 3)                       # D x R, same shape as W^op
+    # Cyclic closure: column sums vanish (1' W^ch = 0), so the reconstructed
+    # inter-period trajectory returns to its start for any intra solution.
+    @test all(abs.(vec(sum(W, dims=1))) .< 1e-10)
+    # Reconstruction matches the least-squares projection of the centered increments.
+    Gc = G .- sum(G; dims=2) ./ size(G, 2)
+    @test maximum(abs.(Gc[:, sel] * transpose(W) - Gc)) < 1e-9
+    # Signed: the fit is free to use negative weights (unlike convex/conical W^op).
+    @test any(W .< -1e-6)
+  end
+
   @testset "resolve_input + cross-sweep experiment identity" begin
     ri = BC.Experiments.resolve_input
     @test ri("tyndp/gep") == ("tyndp/gep", "tyndp/gep")

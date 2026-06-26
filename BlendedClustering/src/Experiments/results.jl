@@ -134,6 +134,11 @@ function save_clustering_artifacts(
     W = clustering_result.weight_matrix
     W === nothing || write_df("weights.arrow", _weight_table(W))
 
+    # Signed storage-chain weights W^ch (when the chain split was fit), dumped in the
+    # same tidy (period, rep_period, weight) form as the operational weights.
+    Wch = clustering_result.chain_weight_matrix
+    Wch === nothing || write_df("chain_weights.arrow", _weight_table(Wch))
+
     R = clustering_result.rp_matrix
     if R !== nothing && !isempty(R)
         svals = svdvals(Matrix{Float64}(R))
