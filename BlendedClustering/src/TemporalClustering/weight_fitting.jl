@@ -362,5 +362,13 @@ function fit_chain_weights(
   # Signed, unconstrained least squares per base period: w^ch_d = G_R⁺ g_d, i.e.
   # W^ch = (G_R⁺ G)ᵀ. `pinv` gives the minimum-norm solution when G_R is rank
   # deficient, so the fit degrades gracefully rather than failing.
-  return Matrix{Float64}((pinv(G_R) * G)')
+  Wch = Matrix{Float64}((pinv(G_R) * G)')
+  # Enforce *exact* operator closure 1ᵀW^ch = 0 (zero column sums over base periods).
+  # De-meaning G only drives the column sums to O(ε); the storage chain pins both
+  # σ^inter_0 = S^0 and the cyclic σ^inter_D = σ^inter_0, and the increment dynamics
+  # give σ^inter_D = σ^inter_0 + (column sums)·y, so a residual O(ε) column sum would
+  # ε-conflict the two endpoints into spurious infeasibility. Projecting each column to
+  # mean-zero over d removes it exactly, an O(ε) change to the fit itself.
+  Wch .-= sum(Wch; dims=1) ./ size(Wch, 1)
+  return Wch
 end
