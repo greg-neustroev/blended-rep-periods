@@ -59,12 +59,14 @@ function create_optimization_model!(connection, model, clustering_result)
         rp_weight .*= operations_weight
 
         # The inter-period storage chain reconstructs each base period's seasonal
-        # storage increment from the representatives — the "prolongation" role of the
+        # storage *increment* from the representatives — the "prolongation" role of the
         # weights. When a separate signed chain matrix W^ch was fit (chain split), it is
-        # used *only* there; the objective/aggregation (rp_weight above) and the
-        # inter-period ramping keep the operational W^op (`weight_matrix`). With no split
-        # the chain reuses `weight_matrix`, exactly the historical single-matrix model.
-        # Both matrices share `rp_matrix`/`R`, so they are indexed identically.
+        # used for those increment dynamics; the objective/aggregation (rp_weight above),
+        # the inter-period ramping, and the *absolute* end-of-horizon reconstruction (the
+        # affine S^0 anchor in the storage_initial block) all keep the operational W^op
+        # (`weight_matrix`). With no split the chain reuses `weight_matrix`, exactly the
+        # historical single-matrix model. Both matrices share `rp_matrix`/`R`, so they
+        # are indexed identically.
         chain_weight_matrix = clustering_result.chain_weight_matrix ≡ nothing ?
                               clustering_result.weight_matrix :
                               clustering_result.chain_weight_matrix
@@ -384,11 +386,19 @@ function create_optimization_model!(connection, model, clustering_result)
         initial_storage_data = run_query("SELECT * FROM initial_storage_constraint_view")
         for row in rows(initial_storage_data)
             @constraint(model, state_of_charge_inter_0[row.id] == row.initial_storage_level)
+            # This reconstructs an *absolute* end-of-horizon level that must hit the
+            # nonzero storage tether S^0 (via the cyclic constraint above), so it needs
+            # partition-of-unity weights and stays on the operational `weight_matrix`
+            # (W^op). A signed chain matrix W^ch is fit for *increments* (its column
+            # sums vanish), so it cannot reconstruct an absolute level inside the
+            # bounded intra SoC — using it here is infeasible whenever S^0 ≠ 0. The
+            # chain split therefore routes W^ch onto the increment dynamics above and
+            # leaves this affine anchor with W^op.
             @constraint(model,
                 state_of_charge_inter[row.id, D[end]]
                 ==
                 sum(
-                    chain_weight_matrix[D[end], r]
+                    clustering_result.weight_matrix[D[end], r]
                     *
                     state_of_charge_intra[row.id, r, H[end]]
                     for r in R
