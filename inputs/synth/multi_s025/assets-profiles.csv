@@ -1,0 +1,10 @@
+asset,profile_type,profile
+Load,demand,Load_demand
+Hydro1,inflows,Hydro1_inflow
+Hydro2,inflows,Hydro2_inflow
+Hydro3,inflows,Hydro3_inflow
+Hydro4,inflows,Hydro4_inflow
+Hydro5,inflows,Hydro5_inflow
+Hydro6,inflows,Hydro6_inflow
+Hydro7,inflows,Hydro7_inflow
+Hydro8,inflows,Hydro8_inflow
