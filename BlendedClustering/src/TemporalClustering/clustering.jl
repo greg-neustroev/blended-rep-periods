@@ -733,15 +733,16 @@ Finds representative periods via data clustering. All distances are Euclidean.
   - `timestep_duration`: the timestep duration `τ`. It enters only the `:economic`
     integrated-inflow rows (under `:unscaled`/`:minmax` it cancels against the
     per-period-peak normalizer); defaults to `1.0` and is otherwise unused.
-  - `chain_weights`: when `true`, additionally fit the signed storage-chain weights
-    `W^ch` (see [`fit_chain_weights`](@ref)) and attach them to the result's
-    `chain_weight_matrix`, so the storage-chain (prolongation) role can use a separate
-    blend from the operational weights. Requires representatives that are real base
-    periods (hull / k-medoids) and inflow data; defaults to `false` (single matrix).
+  - `chain_weight_type`: when not `:none`, additionally fit the storage-chain weights
+    `W^ch` of this class (`:signed`, `:convex`, `:conical`; see [`fit_chain_weights`](@ref))
+    and attach them to the result's `chain_weight_matrix`, so the storage-chain
+    (prolongation) role can use a separate blend from the operational weights. Requires
+    representatives that are real base periods (hull / k-medoids) and inflow data;
+    defaults to `:none` (single matrix).
   - `inflow_peaks`: a `Dict` mapping seasonal-storage asset id to its peak inflow
     `E^max_s`, used to scale the inflow profile into physical net-inflow energy when
-    building the chain-weight storage increments. Only consulted when `chain_weights`
-    is `true`; `nothing` leaves the increments on the dimensionless period-mean scale.
+    building the chain-weight storage increments. Only consulted when `chain_weight_type`
+    is not `:none`; `nothing` leaves the increments on the dimensionless period-mean scale.
   - other named arguments can be provided; they are passed to the clustering method.
 """
 function find_representative_periods(
@@ -755,7 +756,7 @@ function find_representative_periods(
   cache::Bool=true,
   inflow_integral_weight::Float64=0.0,
   timestep_duration::Float64=1.0,
-  chain_weights::Bool=false,
+  chain_weight_type::Symbol=:none,
   inflow_peaks::Union{Nothing,AbstractDict}=nothing,
   args...,
 )
@@ -905,15 +906,15 @@ function find_representative_periods(
   result = ClusteringResult(rp_df, weight_matrix, selection_matrix, rp_matrix)
   merge!(result.diagnostics, selection_stats)
 
-  # Optionally fit the signed chain weights W^ch for the storage-chain role. They are
-  # a *separate* fit from the operational weights above: a closed-form pseudoinverse
-  # on the per-period storage-increment proxy (net inflow energy E^max_s·Σ_h E_{s,d,h}),
-  # over the representatives' columns. Only the actual base-period representatives can
-  # serve as chain anchors, so this needs `selected_indices` (hull / k-medoids), and the
-  # increment proxy needs inflow data; both are required errors rather than silent
-  # fallbacks. The incomplete-last-period case is unsupported (the appended short RP has
-  # no increment column), so it is rejected explicitly.
-  if chain_weights
+  # Optionally fit the chain weights W^ch for the storage-chain role. They are a
+  # *separate* fit from the operational weights above, on the per-period storage-increment
+  # proxy (net inflow energy E^max_s·Σ_h E_{s,d,h}) over the representatives' columns;
+  # `chain_weight_type` picks the class (`:signed` closed-form, `:convex`, `:conical`).
+  # Only the actual base-period representatives can serve as chain anchors, so this needs
+  # `selected_indices` (hull / k-medoids), and the increment proxy needs inflow data; both
+  # are required errors rather than silent fallbacks. The incomplete-last-period case is
+  # unsupported (the appended short RP has no increment column), so it is rejected.
+  if chain_weight_type ≢ :none
     selected_indices ≡ nothing && throw(ArgumentError(
       "chain weights require representatives that are real base periods (selected_indices); " *
       "use a hull or k-medoids clustering, not :k_means"))
@@ -923,7 +924,10 @@ function find_representative_periods(
       clustering_matrix, keys; energy_scale=inflow_peaks, timestep_duration)
     size(increment_matrix, 1) > 0 || throw(ArgumentError(
       "chain weights requested but the data carries no inflow profiles to build the storage increments"))
-    result.chain_weight_matrix = fit_chain_weights(increment_matrix, selected_indices)
+    Wch, chain_residual = fit_chain_weights(increment_matrix, selected_indices; weight_type=chain_weight_type, tol)
+    result.chain_weight_matrix = Wch
+    result.diagnostics[:chain_weight_type] = chain_weight_type
+    result.diagnostics[:chain_fit_residual] = chain_residual
   end
   return result
 end
@@ -967,14 +971,14 @@ function cluster_using_experiment_data(experiment_data, connection)
   elseif normalization ≢ :unscaled
     throw(ArgumentError("Unsupported normalization $(normalization); expected :unscaled, :minmax, or :economic"))
   end
-  # When the signed chain-weight split is requested, fetch the seasonal-storage peak
-  # inflows so the storage-increment proxy is in physical energy units (E^max_s·Σ_h).
-  inflow_peaks = experiment_data.chain_weights ? get_inflow_peaks(connection) : nothing
+  # When a chain-weight split is requested, fetch the seasonal-storage peak inflows so
+  # the storage-increment proxy is in physical energy units (E^max_s·Σ_h).
+  inflow_peaks = experiment_data.chain_weight_type ≢ :none ? get_inflow_peaks(connection) : nothing
 
   # Perform the clustering. A non-zero `inflow_integral_weight` λ augments the
   # clustering matrix with the integrated-inflow rows; `0.0` (the default) is the
-  # un-augmented baseline arm of the ablation. `chain_weights` additionally fits the
-  # signed storage-chain weights W^ch (closed form) for the prolongation role.
+  # un-augmented baseline arm of the ablation. A non-`:none` `chain_weight_type`
+  # additionally fits the storage-chain weights W^ch for the prolongation role.
   find_representative_periods(
     clustering_df,
     n_rep_periods;
@@ -985,7 +989,7 @@ function cluster_using_experiment_data(experiment_data, connection)
     cache=experiment_data.cache,
     inflow_integral_weight=experiment_data.inflow_integral_weight,
     timestep_duration,
-    chain_weights=experiment_data.chain_weights,
+    chain_weight_type=experiment_data.chain_weight_type,
     inflow_peaks,
     init=:kmcen
   )

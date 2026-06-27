@@ -47,12 +47,17 @@ const DEFAULT_INFLOW_INTEGRAL_WEIGHT = 0.0
 # `evaluation_type` other than `:storage_regret`.
 const DEFAULT_FIX_EVERY = 1
 
-# Default for the optional `chain_weights` column: when absent or `false` the single
-# weight matrix plays both roles (operational and storage-chain), the historical
-# behaviour. When `true`, a separate signed chain weight matrix W^ch is fit (closed
-# form, see `fit_chain_weights`) and routed into the inter-period storage chain, while
-# the operational weights keep their role in the objective and ramping.
-const DEFAULT_CHAIN_WEIGHTS = false
+# Default for the optional `chain_weight_type` column: `:none` means the single weight
+# matrix plays both roles (operational and storage-chain), the historical behaviour. Any
+# other value fits a *separate* chain weight matrix W^ch (see `fit_chain_weights`) for
+# the inter-period storage chain, while the operational weights keep their role in the
+# objective and ramping. Supported chain classes:
+#   - `:signed`  — unconstrained closed-form (pseudoinverse) fit on the inflow-increment
+#                  data, projected to exact column-sum-zero closure (the seasonal arm);
+#   - `:convex`  — convex (simplex) fit, partition-of-unity rows (annual balance earned
+#                  by dispatch, not the closure gauge);
+#   - `:conical` — conical (nonnegative) fit.
+const DEFAULT_CHAIN_WEIGHT_TYPE = :none
 
 
 """
@@ -106,7 +111,7 @@ struct ExperimentData
     cache::Bool
     inflow_integral_weight::Float64
     fix_every::Int
-    chain_weights::Bool
+    chain_weight_type::Symbol
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -129,10 +134,10 @@ struct ExperimentData
         # to pinning every boundary; only a coarser cadence relaxes the grading.
         fix_every = hasproperty(run_data_row, :fix_every) ?
                     Int(run_data_row.fix_every) : DEFAULT_FIX_EVERY
-        # `chain_weights` toggles the separate signed storage-chain weight fit; optional
-        # and off by default (the single matrix plays both roles).
-        chain_weights = hasproperty(run_data_row, :chain_weights) ?
-                        Bool(run_data_row.chain_weights) : DEFAULT_CHAIN_WEIGHTS
+        # `chain_weight_type` selects the separate storage-chain weight class; optional
+        # and `:none` by default (the single matrix plays both roles).
+        chain_weight_type = hasproperty(run_data_row, :chain_weight_type) ?
+                            Symbol(run_data_row.chain_weight_type) : DEFAULT_CHAIN_WEIGHT_TYPE
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -153,8 +158,8 @@ struct ExperimentData
         if fix_every ≠ DEFAULT_FIX_EVERY
             push!(name_parts, "fixevery$(fix_every)")
         end
-        if chain_weights ≠ DEFAULT_CHAIN_WEIGHTS
-            push!(name_parts, "chain")
+        if chain_weight_type ≠ DEFAULT_CHAIN_WEIGHT_TYPE
+            push!(name_parts, "chain$(chain_weight_type)")
         end
         if !cache
             push!(name_parts, "nocache")
@@ -171,7 +176,7 @@ struct ExperimentData
             cache,
             inflow_integral_weight,
             fix_every,
-            chain_weights,
+            chain_weight_type,
             run_data_row.evaluation_type
         )
     end

@@ -353,22 +353,43 @@ pseudoinverse returns the minimum-norm least-squares blend.
 """
 function fit_chain_weights(
   increment_matrix::AbstractMatrix{Float64},
-  selected_indices::AbstractVector{<:Integer},
+  selected_indices::AbstractVector{<:Integer};
+  weight_type::Symbol=:signed,
+  tol::Float64=1e-2,
 )
-  # Centre each asset row to net-zero over the year (cyclic closure): 1ᵀG = 0.
+  # Centre each asset row to net-zero over the year (cyclic closure): 1ᵀG = 0. All
+  # classes fit the *same* centred-increment target, so their reconstruction residuals
+  # (returned alongside) are directly comparable as a hull-containment diagnostic.
   n_periods = size(increment_matrix, 2)
   G = increment_matrix .- sum(increment_matrix; dims=2) ./ n_periods
   G_R = G[:, selected_indices]
-  # Signed, unconstrained least squares per base period: w^ch_d = G_R⁺ g_d, i.e.
-  # W^ch = (G_R⁺ G)ᵀ. `pinv` gives the minimum-norm solution when G_R is rank
-  # deficient, so the fit degrades gracefully rather than failing.
-  Wch = Matrix{Float64}((pinv(G_R) * G)')
-  # Enforce *exact* operator closure 1ᵀW^ch = 0 (zero column sums over base periods).
-  # De-meaning G only drives the column sums to O(ε); the storage chain pins both
-  # σ^inter_0 = S^0 and the cyclic σ^inter_D = σ^inter_0, and the increment dynamics
-  # give σ^inter_D = σ^inter_0 + (column sums)·y, so a residual O(ε) column sum would
-  # ε-conflict the two endpoints into spurious infeasibility. Projecting each column to
-  # mean-zero over d removes it exactly, an O(ε) change to the fit itself.
-  Wch .-= sum(Wch; dims=1) ./ size(Wch, 1)
-  return Wch
+  if weight_type ≡ :signed
+    # Signed, unconstrained least squares per base period: w^ch_d = G_R⁺ g_d, i.e.
+    # W^ch = (G_R⁺ G)ᵀ. `pinv` gives the minimum-norm solution when G_R is rank
+    # deficient, so the fit degrades gracefully rather than failing. Then enforce
+    # *exact* operator closure 1ᵀW^ch = 0: de-meaning G only drives the column sums to
+    # O(ε), but the chain pins both σ^inter_0 = S^0 and the cyclic σ^inter_D = σ^inter_0
+    # while the dynamics give σ^inter_D = σ^inter_0 + (column sums)·y, so a residual
+    # O(ε) column sum would ε-conflict the endpoints into spurious infeasibility.
+    # Projecting each column to mean-zero over d removes it exactly.
+    Wch = Matrix{Float64}((pinv(G_R) * G)')
+    Wch .-= sum(Wch; dims=1) ./ size(Wch, 1)
+  elseif weight_type ≡ :convex || weight_type ≡ :conical || weight_type ≡ :conical_bounded
+    # Bounded classes: fit the increments with the same projected-gradient machinery as
+    # the operational weights (convex = simplex, conical = nonnegative orthant). These
+    # have positive column sums, so they do NOT carry the closure gauge — annual balance
+    # is instead earned by dispatch through the cyclic constraint. The fit can only
+    # reconstruct increments inside the (convex/conical) hull of the representative
+    # increments, so its residual measures how far the base periods fall outside it.
+    Wch = Matrix{Float64}(zeros(n_periods, length(selected_indices)))
+    fit_rep_period_weights!(Wch, G, G_R; weight_type, tol)
+  else
+    throw(ArgumentError("Unsupported chain weight_type $(weight_type); expected " *
+                        ":signed, :convex, :conical, or :conical_bounded"))
+  end
+  # Relative reconstruction residual ‖G_R W^chᵀ − G‖_F / ‖G‖_F: ~0 for :signed (exact
+  # at full row rank), and the hull-containment error for the bounded classes (small
+  # when the base increments are in-hull, large in the sign-changing seasonal regime).
+  residual = norm(G_R * Wch' - G) / max(norm(G), eps())
+  return Wch, residual
 end

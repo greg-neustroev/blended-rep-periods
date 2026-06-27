@@ -196,7 +196,7 @@ end
     end
   end
 
-  @testset "experiment config schema: chain_weights default off / suffixes name" begin
+  @testset "experiment config schema: chain_weight_type default none / suffixes name" begin
     mktempdir() do dir
       # Absent column -> chain split off, name unchanged.
       path = joinpath(dir, "run.csv")
@@ -205,36 +205,40 @@ end
         println(io, "5,24,hull,convex,storage_regret")
       end
       ed = ExperimentData(first(eachrow(read_run_data(path))), "gep")
-      @test ed.chain_weights == BC.DEFAULT_CHAIN_WEIGHTS
+      @test ed.chain_weight_type == BC.DEFAULT_CHAIN_WEIGHT_TYPE
+      @test ed.chain_weight_type == :none
       @test ed.name == "gep_5_24_hull_convex_$(BC.DEFAULT_PGD_TOL)"
-      # Explicit chain split -> field set and name carries the `_chain` suffix.
+      # Explicit chain split -> field set and name carries the `_chain<class>` suffix.
       path2 = joinpath(dir, "run2.csv")
       open(path2, "w") do io
-        println(io, "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,chain_weights")
-        println(io, "5,24,hull,convex,0.01,storage_regret,true")
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,chain_weight_type")
+        println(io, "5,24,hull,convex,0.01,storage_regret,signed")
       end
       ed2 = ExperimentData(first(eachrow(read_run_data(path2))), "gep")
-      @test ed2.chain_weights == true
-      @test ed2.name == "gep_5_24_hull_convex_0.01_chain"
+      @test ed2.chain_weight_type == :signed
+      @test ed2.name == "gep_5_24_hull_convex_0.01_chainsigned"
     end
   end
 
-  @testset "fit_chain_weights: signed closed-form chain fit" begin
+  @testset "fit_chain_weights: signed closed-form + bounded classes" begin
     fcw = BC.TemporalClustering.fit_chain_weights
     # 2 assets x 6 base periods, 3 representatives.
     G = [1.0 3.0 2.0 5.0 0.0 4.0;
          2.0 1.0 0.0 3.0 1.0 2.0]
     sel = [1, 4, 6]
-    W = fcw(G, sel)
-    @test size(W) == (6, 3)                       # D x R, same shape as W^op
-    # Cyclic closure: column sums vanish (1' W^ch = 0), so the reconstructed
-    # inter-period trajectory returns to its start for any intra solution.
-    @test all(abs.(vec(sum(W, dims=1))) .< 1e-10)
-    # Reconstruction matches the least-squares projection of the centered increments.
     Gc = G .- sum(G; dims=2) ./ size(G, 2)
+    # Signed: exact reconstruction, exact column-sum-zero closure, signed entries.
+    W, res = fcw(G, sel; weight_type=:signed)
+    @test size(W) == (6, 3)                        # D x R, same shape as W^op
+    @test all(abs.(vec(sum(W, dims=1))) .< 1e-10)  # 1' W^ch = 0 (cyclic closure)
     @test maximum(abs.(Gc[:, sel] * transpose(W) - Gc)) < 1e-9
-    # Signed: the fit is free to use negative weights (unlike convex/conical W^op).
-    @test any(W .< -1e-6)
+    @test res < 1e-9                               # residual ~ 0 (full row rank)
+    @test any(W .< -1e-6)                          # signed
+    # Convex: simplex rows (sum to 1, nonnegative) — cannot carry the closure gauge.
+    Wc, resc = fcw(G, sel; weight_type=:convex)
+    @test all(Wc .>= -1e-9)
+    @test all(abs.(vec(sum(Wc, dims=2)) .- 1.0) .< 1e-6)   # rows sum to 1
+    @test resc >= -1e-12                            # residual defined (>=0)
   end
 
   @testset "resolve_input + cross-sweep experiment identity" begin

@@ -134,10 +134,18 @@ function save_clustering_artifacts(
     W = clustering_result.weight_matrix
     W === nothing || write_df("weights.arrow", _weight_table(W))
 
-    # Signed storage-chain weights W^ch (when the chain split was fit), dumped in the
-    # same tidy (period, rep_period, weight) form as the operational weights.
+    # Storage-chain weights W^ch (when the chain split was fit), dumped in the same tidy
+    # (period, rep_period, weight) form as the operational weights, plus a one-row
+    # `chain_fit.arrow` recording the chain class and the increment-reconstruction
+    # residual (the in-hull / out-of-hull diagnostic).
     Wch = clustering_result.chain_weight_matrix
-    Wch === nothing || write_df("chain_weights.arrow", _weight_table(Wch))
+    if Wch !== nothing
+        write_df("chain_weights.arrow", _weight_table(Wch))
+        write_df("chain_fit.arrow", DataFrame(
+            chain_weight_type=[string(get(diag, :chain_weight_type, missing))],
+            chain_fit_residual=[get(diag, :chain_fit_residual, missing)],
+        ))
+    end
 
     R = clustering_result.rp_matrix
     if R !== nothing && !isempty(R)
