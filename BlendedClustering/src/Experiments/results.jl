@@ -144,6 +144,8 @@ function save_clustering_artifacts(
         write_df("chain_fit.arrow", DataFrame(
             chain_weight_type=[string(get(diag, :chain_weight_type, missing))],
             chain_fit_residual=[get(diag, :chain_fit_residual, missing)],
+            chain_max_abs_weight=[get(diag, :chain_max_abs_weight, missing)],
+            chain_max_row_l1=[get(diag, :chain_max_row_l1, missing)],
         ))
     end
 

@@ -94,6 +94,58 @@ function project_onto_nonnegative_orthant(vector::AbstractVector{Float64})
   return max.(vector, 0.0)
 end
 
+"""
+  project_box_sum(v; lo=0.0, hi=1.0, s=1.0)
+
+Euclidean projection of `v` onto `{ w : sum(w)=s, lo ≤ w_i ≤ hi }` — the capped-simplex
+projection generalized to an arbitrary box. One projector serves all three sum-constrained
+chain-weight classes, differing only in `lo`/`hi`:
+
+  - `lo=0,  hi=1`  → the probability simplex = **convex** weights (the `hi=1` clip is
+    vacuous since `sum=1, w≥0 ⇒ w≤1`);
+  - `lo=-1, hi=1`  → sum-1 with `|w|≤1` = **clipped affine** weights (convex with bounded
+    negative weights allowed);
+  - `lo=-Inf` or `hi=Inf` → the closed-form hyperplane projection = **affine** weights.
+
+The KKT optimum has the form `w_i = clip(v_i + θ, lo, hi)` for a single scalar `θ` fixed by
+`sum(w)=s`. This is NOT project-then-clip (projecting onto the hyperplane then clamping
+breaks the sum); the correct object finds the `θ` such that clipping *already* sums to `s`.
+`θ` is found exactly by walking the `2n` breakpoints of the piecewise-linear, nondecreasing
+`g(θ)=Σ clip(v_i+θ,lo,hi)`.
+"""
+function project_box_sum(v::AbstractVector{T}; lo::Real=0.0, hi::Real=1.0, s::Real=1.0) where {T<:Real}
+  n = length(v)
+  lo = T(lo); hi = T(hi); s = T(s)
+  lo < hi || throw(ArgumentError("need lo < hi"))
+  # Unbounded (affine) case: closed-form hyperplane projection.
+  if isinf(lo) || isinf(hi)
+    return v .+ (s - sum(v)) / n
+  end
+  g(θ) = (acc = zero(T); @inbounds for x in v; acc += clamp(x + θ, lo, hi); end; acc)
+  bps = Vector{T}(undef, 2n)
+  @inbounds for i in 1:n
+    bps[2i-1] = lo - v[i]
+    bps[2i] = hi - v[i]
+  end
+  sort!(bps)
+  a = bps[1] - one(T); ga = n * lo  # left of all breakpoints everything clamps to lo
+  @inbounds for k in 1:2n
+    b = bps[k]; gb = g(b)
+    if gb >= s
+      # root in [a,b]; g linear here with slope = #interior coords
+      mid = (a + b) / 2; slope = zero(T)
+      @inbounds for x in v
+        y = x + mid
+        slope += (lo < y < hi) ? one(T) : zero(T)
+      end
+      θ = slope > 0 ? a + (s - ga) / slope : b
+      return clamp.(v .+ θ, lo, hi)
+    end
+    a, ga = b, gb
+  end
+  return clamp.(v .+ (bps[end] + one(T)), lo, hi)  # right of all breakpoints: clamp to hi
+end
+
 # Numerical backstop on the PGD iteration count. In practice the resolution-based
 # stopping test in `projected_gradient_descent!` fires first; this constant only
 # rules out pathological non-termination from floating-point plateaus.
@@ -326,30 +378,34 @@ function fit_rep_period_weights!(
 end
 
 """
-  fit_chain_weights(increment_matrix, selected_indices) -> Matrix{Float64}
+  fit_chain_weights(increment_matrix, selected_indices; weight_type, tol) -> (W^ch, residual)
 
-Fit the signed "chain" weights `W^ch` used by the inter-period storage chain
-(the prolongation role of the weights). Unlike the operational weights, which
-solve the constrained projection (4) per period with projected gradient descent,
-`W^ch` solves the *same* least-squares projection on the storage-increment data
-`increment_matrix` over the **unconstrained (signed)** domain, for which the
-minimiser is the closed-form pseudoinverse — no PGD.
+Fit the "chain" weights `W^ch` used by the inter-period storage chain (the prolongation
+role of the weights), as a *separate* fit from the operational weights, on the
+storage-increment data `increment_matrix`. `increment_matrix` `G` has one row per
+seasonal-storage asset and one column per base period; column `g_d` is period `d`'s net
+storage-increment proxy (per-period net inflow energy). `selected_indices` are the
+base-period indices chosen as representatives (`G_R = G[:, selected_indices]`), in RP order.
 
-`increment_matrix` `G` has one row per seasonal-storage asset and one column per
-base period; column `g_d` is period `d`'s net storage-increment proxy (per-period
-net inflow energy). `selected_indices` are the base-period indices chosen as
-representatives (`G_R = G[:, selected_indices]`), in representative-period order.
+Each asset row of `G` is first centred to net zero over the year (`1ᵀG = 0`). `weight_type`
+selects the class:
 
-Each asset row of `G` is first centred to net zero over the year. That places `G`
-on the cyclically closed manifold `1ᵀG = 0`, on which the unconstrained optimum
-automatically satisfies operator-level closure — the column sums of `W^ch` vanish,
-`1ᵀW^ch = 0` — so the reconstructed inter-period trajectory returns to its start
-(constraint (2k)) for any intra-period solution, with no constrained solve needed.
+  - `:signed` — unconstrained least squares, closed-form pseudoinverse `W^ch=(G_R⁺G)ᵀ`,
+    then projected to *exact* column-sum-zero so the closure `1ᵀW^ch=0` holds to machine
+    precision (the reconstructed trajectory returns to its start for any dispatch). Exact
+    when `g_d ∈ col(G_R)`; min-norm least-squares otherwise. Its weights are unbounded, so
+    it blows up when `G_R` is rank-deficient.
+  - `:convex` / `:clipped_affine` / `:affine` / `:conical` — per-period projected gradient
+    descent on the *same* target, differing ONLY in the projection (`project_box_sum` with
+    `lo=0` / `lo=-1` / `lo=-Inf`, or the nonneg orthant). The sum-1 classes have positive
+    column sums (no closure gauge); annual balance is earned by dispatch via the cyclic
+    constraint, as the operational weights do. The `lo`-only difference between convex and
+    clipped-affine makes any downstream regret difference attributable to the lower bound.
 
-Returns `W^ch` as a dense `n_base_periods × n_rp` matrix (the same shape and RP
-ordering as the operational `weight_matrix`), so it drops straight into the chain
-constraints. The fit is exact for period `d` when `g_d ∈ col(G_R)`; otherwise the
-pseudoinverse returns the minimum-norm least-squares blend.
+Returns `(W^ch, residual)`: `W^ch` is a dense `n_base_periods × n_rp` matrix (same shape and
+RP ordering as the operational `weight_matrix`); `residual = ‖G_R W^chᵀ − G‖_F/‖G‖_F` is the
+increment-reconstruction error (~0 for full-rank `:signed`; the hull-containment error for
+the bounded classes — small in-hull, large in the sign-changing seasonal regime).
 """
 function fit_chain_weights(
   increment_matrix::AbstractMatrix{Float64},
@@ -363,6 +419,7 @@ function fit_chain_weights(
   n_periods = size(increment_matrix, 2)
   G = increment_matrix .- sum(increment_matrix; dims=2) ./ n_periods
   G_R = G[:, selected_indices]
+  R = length(selected_indices)
   if weight_type ≡ :signed
     # Signed, unconstrained least squares per base period: w^ch_d = G_R⁺ g_d, i.e.
     # W^ch = (G_R⁺ G)ᵀ. `pinv` gives the minimum-norm solution when G_R is rank
@@ -374,18 +431,29 @@ function fit_chain_weights(
     # Projecting each column to mean-zero over d removes it exactly.
     Wch = Matrix{Float64}((pinv(G_R) * G)')
     Wch .-= sum(Wch; dims=1) ./ size(Wch, 1)
-  elseif weight_type ≡ :convex || weight_type ≡ :conical || weight_type ≡ :conical_bounded
-    # Bounded classes: fit the increments with the same projected-gradient machinery as
-    # the operational weights (convex = simplex, conical = nonnegative orthant). These
-    # have positive column sums, so they do NOT carry the closure gauge — annual balance
-    # is instead earned by dispatch through the cyclic constraint. The fit can only
-    # reconstruct increments inside the (convex/conical) hull of the representative
-    # increments, so its residual measures how far the base periods fall outside it.
-    Wch = Matrix{Float64}(zeros(n_periods, length(selected_indices)))
-    fit_rep_period_weights!(Wch, G, G_R; weight_type, tol)
   else
-    throw(ArgumentError("Unsupported chain weight_type $(weight_type); expected " *
-                        ":signed, :convex, :conical, or :conical_bounded"))
+    # Sum-1 / nonneg classes via per-base-period projected gradient descent, all sharing
+    # the SAME PGD and target and differing ONLY in the projection — so any difference
+    # between, e.g., convex and clipped_affine is attributable to the projection's lower
+    # bound (`lo`: 0 vs -1) alone. None of these carry the column-sum-zero closure gauge
+    # (the sum-1 classes have positive column sums; conical nonneg) — annual balance is
+    # earned by dispatch through the cyclic constraint, exactly as the operational weights.
+    projection =
+      weight_type ≡ :convex         ? (w -> project_box_sum(w; lo=0.0, hi=1.0, s=1.0)) :
+      weight_type ≡ :clipped_affine ? (w -> project_box_sum(w; lo=-1.0, hi=1.0, s=1.0)) :
+      weight_type ≡ :affine         ? (w -> w .+ (1.0 - sum(w)) / length(w)) :
+      weight_type ≡ :conical        ? project_onto_nonnegative_orthant :
+      throw(ArgumentError("Unsupported chain weight_type $(weight_type); expected :signed, " *
+                          ":convex, :clipped_affine, :affine, or :conical"))
+    Wch = Matrix{Float64}(undef, n_periods, R)
+    step_size = 1.0 / opnorm(G_R, 2)^2
+    for d in 1:n_periods
+      target = G[:, d]
+      gradient = w -> G_R' * (G_R * w - target)
+      x = projection(zeros(R))
+      x, _ = projected_gradient_descent!(x; gradient, projection, tol, learning_rate=step_size)
+      Wch[d, :] = x
+    end
   end
   # Relative reconstruction residual ‖G_R W^chᵀ − G‖_F / ‖G‖_F: ~0 for :signed (exact
   # at full row rank), and the hull-containment error for the bounded classes (small

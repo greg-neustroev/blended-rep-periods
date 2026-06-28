@@ -928,6 +928,11 @@ function find_representative_periods(
     result.chain_weight_matrix = Wch
     result.diagnostics[:chain_weight_type] = chain_weight_type
     result.diagnostics[:chain_fit_residual] = chain_residual
+    # Boundedness diagnostics: max|W^ch| separates bounded (convex/clipped_affine ≤ 1)
+    # from unbounded (affine/signed) classes; max row ℓ1 measures how much sign freedom
+    # was actually used (= 1 for convex; > 1 only when negative weights were taken).
+    result.diagnostics[:chain_max_abs_weight] = maximum(abs, Wch)
+    result.diagnostics[:chain_max_row_l1] = maximum(sum(abs, Wch; dims=2))
   end
   return result
 end

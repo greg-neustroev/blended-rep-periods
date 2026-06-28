@@ -239,6 +239,34 @@ end
     @test all(Wc .>= -1e-9)
     @test all(abs.(vec(sum(Wc, dims=2)) .- 1.0) .< 1e-6)   # rows sum to 1
     @test resc >= -1e-12                            # residual defined (>=0)
+    # Clipped affine: sum-1 rows with |w| ≤ 1 (convex + bounded negatives); never
+    # reconstructs worse than convex (superset), and bounded by construction.
+    Wca, resca = fcw(G, sel; weight_type=:clipped_affine)
+    @test all(abs.(vec(sum(Wca, dims=2)) .- 1.0) .< 1e-6)  # rows sum to 1
+    @test all(abs.(Wca) .<= 1.0 + 1e-9)                    # |w| ≤ 1 (bounded)
+    @test resca <= resc + 1e-9                             # ⊇ convex ⇒ residual ≤ convex
+    # Affine: sum-1, unbounded.
+    Waf, _ = fcw(G, sel; weight_type=:affine)
+    @test all(abs.(vec(sum(Waf, dims=2)) .- 1.0) .< 1e-6)
+  end
+
+  @testset "project_box_sum: true projection + the project-then-clip trap" begin
+    pbs = BC.TemporalClustering.project_box_sum
+    for _ in 1:300
+      n = rand(2:12); v = randn(n) .* 3.0
+      w = pbs(v; lo=-1.0, hi=1.0, s=1.0)
+      @test isapprox(sum(w), 1.0; atol=1e-9)
+      @test all(-1.0 - 1e-9 .<= w .<= 1.0 + 1e-9)
+      # lo=0 recovers the simplex (convex); clipped affine is a superset ⇒ never farther.
+      wc = pbs(v; lo=0.0, hi=1.0, s=1.0)
+      @test all(wc .>= -1e-9)
+      @test norm(w - v) <= norm(wc - v) + 1e-9
+    end
+    # The trap: project-then-clip breaks the sum on a valid witness; the true projector does not.
+    v = [5.0, 0.0, 0.0]
+    ptc = clamp.(v .+ (1.0 - sum(v)) / 3, -1.0, 1.0)
+    @test !isapprox(sum(ptc), 1.0; atol=1e-6)              # sum broken (-1)
+    @test isapprox(sum(pbs(v; lo=-1.0, hi=1.0, s=1.0)), 1.0; atol=1e-9)
   end
 
   @testset "resolve_input + cross-sweep experiment identity" begin
