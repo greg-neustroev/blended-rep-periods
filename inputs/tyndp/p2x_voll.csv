@@ -5,3 +5,5 @@ n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,norm
 10,24,hull,convex,0.0001,storage_regret,unscaled,0.0,1,clipped_affine
 10,24,hull,convex,0.0001,storage_regret,unscaled,0.0,1,affine
 10,24,hull,convex,0.0001,storage_regret,unscaled,0.0,1,signed
+10,24,hull,convex,0.0001,storage_regret,unscaled,0.0,1,conical_bounded
+10,24,hull,convex,0.0001,storage_regret,unscaled,0.0,1,l1_ball
