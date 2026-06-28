@@ -252,6 +252,24 @@ end
     Wsc, _ = fcw(G, sel; weight_type=:conical_bounded)
     @test all(Wsc .>= -1e-9)
     @test all(vec(sum(Wsc, dims=2)) .<= 1.0 + 1e-6)
+    # ℓ1-ball: signed contraction — row ℓ1 ≤ 1 (so ‖W‖_{∞→∞} ≤ 1) with free signs.
+    Wl1, _ = fcw(G, sel; weight_type=:l1_ball)
+    @test all(vec(sum(abs, Wl1, dims=2)) .<= 1.0 + 1e-6)   # contraction, signs free
+  end
+
+  @testset "project_l1_ball: ℓ1 contraction with free signs" begin
+    pl1 = BC.TemporalClustering.project_l1_ball
+    for _ in 1:300
+      n = rand(2:12); v = randn(n) .* 2.0
+      w = pl1(v)
+      @test sum(abs, w) <= 1.0 + 1e-9                      # in the ℓ1 ball
+      if sum(abs, v) <= 1.0
+        @test w ≈ v                                        # interior ⇒ identity
+      else
+        @test isapprox(sum(abs, w), 1.0; atol=1e-9)        # boundary ⇒ ‖w‖₁ = 1
+        @test all(sign.(w) .* sign.(v) .>= -1e-12)         # signs preserved
+      end
+    end
   end
 
   @testset "project_box_sum: true projection + the project-then-clip trap" begin

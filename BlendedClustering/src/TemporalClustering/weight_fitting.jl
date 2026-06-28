@@ -160,6 +160,22 @@ function project_subunit_conic(v::AbstractVector{Float64})
   return sum(w) <= 1.0 ? w : project_box_sum(v; lo=0.0, hi=1.0, s=1.0)
 end
 
+"""
+  project_l1_ball(v)
+
+Euclidean projection of `v` onto the ℓ1 ball `{ w : Σ_r|w_r| ≤ 1 }` — the *signed*
+contraction class. Like sub-unit conic it is a contraction in the ℓ∞-induced norm
+(`‖W‖_{∞→∞} = max row-ℓ1 ≤ 1`, so no expansion blow-up), but signs are free, so it has the
+reconstruction reach convex/sub-unit-conic lack while staying contractive — the
+norm-correct version of clipped affine (which bounded ℓ∞ and let ℓ1 run to R). Standard
+soft-threshold projection: if `‖v‖₁ ≤ 1` keep `v`; else project `|v|` onto the simplex and
+restore signs (`w = sign(v) ⊙ max(|v|-θ, 0)`).
+"""
+function project_l1_ball(v::AbstractVector{Float64})
+  sum(abs, v) <= 1.0 && return copy(v)
+  return sign.(v) .* project_box_sum(abs.(v); lo=0.0, hi=1.0, s=1.0)
+end
+
 # Numerical backstop on the PGD iteration count. In practice the resolution-based
 # stopping test in `projected_gradient_descent!` fires first; this constant only
 # rules out pathological non-termination from floating-point plateaus.
@@ -458,8 +474,9 @@ function fit_chain_weights(
       weight_type ≡ :affine         ? (w -> w .+ (1.0 - sum(w)) / length(w)) :
       weight_type ≡ :conical        ? project_onto_nonnegative_orthant :
       weight_type ≡ :conical_bounded ? project_subunit_conic :
+      weight_type ≡ :l1_ball        ? project_l1_ball :
       throw(ArgumentError("Unsupported chain weight_type $(weight_type); expected :signed, " *
-                          ":convex, :clipped_affine, :affine, :conical, or :conical_bounded"))
+                          ":convex, :clipped_affine, :affine, :conical, :conical_bounded, or :l1_ball"))
     Wch = Matrix{Float64}(undef, n_periods, R)
     step_size = 1.0 / opnorm(G_R, 2)^2
     for d in 1:n_periods
