@@ -248,6 +248,10 @@ end
     # Affine: sum-1, unbounded.
     Waf, _ = fcw(G, sel; weight_type=:affine)
     @test all(abs.(vec(sum(Waf, dims=2)) .- 1.0) .< 1e-6)
+    # Sub-unit conic: nonneg, row sum ≤ 1 (contraction in ℓ∞-induced norm), balance-relaxed.
+    Wsc, _ = fcw(G, sel; weight_type=:conical_bounded)
+    @test all(Wsc .>= -1e-9)
+    @test all(vec(sum(Wsc, dims=2)) .<= 1.0 + 1e-6)
   end
 
   @testset "project_box_sum: true projection + the project-then-clip trap" begin

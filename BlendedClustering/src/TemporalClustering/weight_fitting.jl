@@ -146,6 +146,20 @@ function project_box_sum(v::AbstractVector{T}; lo::Real=0.0, hi::Real=1.0, s::Re
   return clamp.(v .+ (bps[end] + one(T)), lo, hi)  # right of all breakpoints: clamp to hi
 end
 
+"""
+  project_subunit_conic(v)
+
+Euclidean projection of `v` onto `{ w : w ≥ 0, sum(w) ≤ 1 }` — the sub-unit conic class.
+Like convex it is a contraction in the ℓ∞-induced norm (`‖w‖₁ = sum(w) ≤ 1`, so no expansion
+blowup), but unlike convex it does NOT force the sum to 1, so it is *balance-relaxed*. If the
+nonnegative part already sums to ≤ 1 the sum constraint is inactive (`w = max(v,0)`); otherwise
+it binds and the projection lands on the simplex.
+"""
+function project_subunit_conic(v::AbstractVector{Float64})
+  w = max.(v, 0.0)
+  return sum(w) <= 1.0 ? w : project_box_sum(v; lo=0.0, hi=1.0, s=1.0)
+end
+
 # Numerical backstop on the PGD iteration count. In practice the resolution-based
 # stopping test in `projected_gradient_descent!` fires first; this constant only
 # rules out pathological non-termination from floating-point plateaus.
@@ -443,8 +457,9 @@ function fit_chain_weights(
       weight_type ≡ :clipped_affine ? (w -> project_box_sum(w; lo=-1.0, hi=1.0, s=1.0)) :
       weight_type ≡ :affine         ? (w -> w .+ (1.0 - sum(w)) / length(w)) :
       weight_type ≡ :conical        ? project_onto_nonnegative_orthant :
+      weight_type ≡ :conical_bounded ? project_subunit_conic :
       throw(ArgumentError("Unsupported chain weight_type $(weight_type); expected :signed, " *
-                          ":convex, :clipped_affine, :affine, or :conical"))
+                          ":convex, :clipped_affine, :affine, :conical, or :conical_bounded"))
     Wch = Matrix{Float64}(undef, n_periods, R)
     step_size = 1.0 / opnorm(G_R, 2)^2
     for d in 1:n_periods
