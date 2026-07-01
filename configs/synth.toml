@@ -1,0 +1,10 @@
+# Synthetic forced-sign-change instance + flat control (signed-vs-convex chain inversion).
+# One node, one seasonal reservoir (charge summer / draw winter), flat load, gas backstop.
+# Hull selects summer RPs by geometry (winter inflow ~0 is interior); convex W^ch cannot
+# reconstruct the negative winter increments, signed can. The flat control has no sign
+# change (in-hull) and should show no inversion. Single asset => G is 1x12, fully in span.
+inputs = ["synth/signchange", "synth/flatctrl"]
+seeds  = [653657]
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

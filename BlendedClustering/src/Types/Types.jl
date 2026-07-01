@@ -39,6 +39,26 @@ const DEFAULT_NORMALIZATION = :unscaled
 # asset's per-period total inflow energy (see `find_representative_periods`).
 const DEFAULT_INFLOW_INTEGRAL_WEIGHT = 0.0
 
+# Default storage-regret fixing cadence used when a configuration CSV omits the
+# optional `fix_every` column. `1` pins every base-period boundary state of charge
+# in the full-horizon evaluation model (the original, strictest grading); a coarser
+# `k > 1` pins only every k-th boundary so the full model re-optimizes the storage
+# trajectory between checkpoints (see `evaluate_solution!`). Ignored for any
+# `evaluation_type` other than `:storage_regret`.
+const DEFAULT_FIX_EVERY = 1
+
+# Default for the optional `chain_weight_type` column: `:none` means the single weight
+# matrix plays both roles (operational and storage-chain), the historical behaviour. Any
+# other value fits a *separate* chain weight matrix W^ch (see `fit_chain_weights`) for
+# the inter-period storage chain, while the operational weights keep their role in the
+# objective and ramping. Supported chain classes:
+#   - `:signed`  — unconstrained closed-form (pseudoinverse) fit on the inflow-increment
+#                  data, projected to exact column-sum-zero closure (the seasonal arm);
+#   - `:convex`  — convex (simplex) fit, partition-of-unity rows (annual balance earned
+#                  by dispatch, not the closure gauge);
+#   - `:conical` — conical (nonnegative) fit.
+const DEFAULT_CHAIN_WEIGHT_TYPE = :none
+
 
 """
     read_run_data(path) -> DataFrame
@@ -50,7 +70,8 @@ the optional `normalization`) to `Symbol`s. The projected gradient descent
 tolerance column `tol` is optional and defaults to `DEFAULT_PGD_TOL` when absent;
 the `normalization` column is optional and defaults to `DEFAULT_NORMALIZATION`; the
 `inflow_integral_weight` column is optional and defaults to
-`DEFAULT_INFLOW_INTEGRAL_WEIGHT`.
+`DEFAULT_INFLOW_INTEGRAL_WEIGHT`; the `fix_every` column is optional and defaults to
+`DEFAULT_FIX_EVERY`.
 """
 function read_run_data(path)
     df = CSV.read(path, DataFrame)
@@ -89,6 +110,8 @@ struct ExperimentData
     normalization::Symbol
     cache::Bool
     inflow_integral_weight::Float64
+    fix_every::Int
+    chain_weight_type::Symbol
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -107,6 +130,14 @@ struct ExperimentData
         inflow_integral_weight = hasproperty(run_data_row, :inflow_integral_weight) ?
                                  Float64(run_data_row.inflow_integral_weight) :
                                  DEFAULT_INFLOW_INTEGRAL_WEIGHT
+        # `fix_every` (the storage-regret fixing cadence k) is optional and defaults
+        # to pinning every boundary; only a coarser cadence relaxes the grading.
+        fix_every = hasproperty(run_data_row, :fix_every) ?
+                    Int(run_data_row.fix_every) : DEFAULT_FIX_EVERY
+        # `chain_weight_type` selects the separate storage-chain weight class; optional
+        # and `:none` by default (the single matrix plays both roles).
+        chain_weight_type = hasproperty(run_data_row, :chain_weight_type) ?
+                            Symbol(run_data_row.chain_weight_type) : DEFAULT_CHAIN_WEIGHT_TYPE
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -124,6 +155,12 @@ struct ExperimentData
         if inflow_integral_weight ≠ DEFAULT_INFLOW_INTEGRAL_WEIGHT
             push!(name_parts, "inflowint$(inflow_integral_weight)")
         end
+        if fix_every ≠ DEFAULT_FIX_EVERY
+            push!(name_parts, "fixevery$(fix_every)")
+        end
+        if chain_weight_type ≠ DEFAULT_CHAIN_WEIGHT_TYPE
+            push!(name_parts, "chain$(chain_weight_type)")
+        end
         if !cache
             push!(name_parts, "nocache")
         end
@@ -138,6 +175,8 @@ struct ExperimentData
             normalization,
             cache,
             inflow_integral_weight,
+            fix_every,
+            chain_weight_type,
             run_data_row.evaluation_type
         )
     end
@@ -162,6 +201,11 @@ mutable struct ClusteringResult
     weight_matrix::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}
     clustering_matrix::Union{Matrix{Float64},Nothing}
     rp_matrix::Union{Matrix{Float64},Nothing}
+    # Optional signed "chain" weights W^ch for the storage-chain (prolongation) role,
+    # fit separately from the operational weights `weight_matrix` (W^op). `nothing`
+    # means the single-matrix behaviour: the chain reuses `weight_matrix`. Same
+    # `D × R` shape and RP ordering as `weight_matrix` when present.
+    chain_weight_matrix::Union{Matrix{Float64},Nothing}
     # Free-form diagnostics captured while selecting representatives and fitting
     # weights (greedy-hull cache hit/miss counts, per-fit PGD iteration counts).
     # Populated in place so the experiment layer can record them without re-running
@@ -171,11 +215,12 @@ end
 
 # Convenience constructors: the clustering/representative-period matrices are not
 # always available (e.g. the single-period fast path), so default them to nothing;
-# diagnostics default to an empty dict.
+# the chain weights default to nothing (single-matrix behaviour); diagnostics default
+# to an empty dict.
 ClusteringResult(profiles, weight_matrix, clustering_matrix, rp_matrix) =
-    ClusteringResult(profiles, weight_matrix, clustering_matrix, rp_matrix, Dict{Symbol,Any}())
+    ClusteringResult(profiles, weight_matrix, clustering_matrix, rp_matrix, nothing, Dict{Symbol,Any}())
 ClusteringResult(profiles, weight_matrix) =
-    ClusteringResult(profiles, weight_matrix, nothing, nothing)
+    ClusteringResult(profiles, weight_matrix, nothing, nothing, nothing, Dict{Symbol,Any}())
 
 # --- Helpers for populating the per-run summary record (capture-once stats) ---
 
@@ -230,6 +275,7 @@ struct ExperimentResult
     weight_type::Symbol
     normalization::Symbol
     tol::Float64
+    fix_every::Int
     # Clustering geometry / quality.
     projection_error::Float64
     sigma_max::Union{Float64,Missing}
@@ -255,6 +301,7 @@ struct ExperimentResult
     cost_of_operations::Union{Float64,Missing}
     cost_of_spillage::Union{Float64,Missing}
     cost_of_borrow::Union{Float64,Missing}
+    cost_of_soc_band::Union{Float64,Missing}
     n_variables::Int
     n_constraints::Int
     # Evaluation (full-horizon) model: regret numerator, cost decomposition, size.
@@ -264,10 +311,12 @@ struct ExperimentResult
     eval_cost_of_operations::Union{Float64,Missing}
     eval_cost_of_spillage::Union{Float64,Missing}
     eval_cost_of_borrow::Union{Float64,Missing}
+    eval_cost_of_soc_band::Union{Float64,Missing}
     eval_n_variables::Int
     eval_n_constraints::Int
     total_spillage::Float64
     total_borrow::Float64
+    total_soc_band::Float64
     # Runtime breakdown.
     time_to_preprocess::Float64
     time_to_cluster::Float64
@@ -319,6 +368,7 @@ struct ExperimentResult
         cost_of_operations = _solved_value(solved_model, :cost_of_operations)
         cost_of_spillage = _solved_value(solved_model, :cost_of_spillage)
         cost_of_borrow = _solved_value(solved_model, :cost_of_borrow)
+        cost_of_soc_band = _solved_value(solved_model, :cost_of_soc_band)
         n_variables = _n_variables(solved_model)
         n_constraints = _n_constraints(solved_model)
 
@@ -336,6 +386,7 @@ struct ExperimentResult
         eval_cost_of_operations = _solved_value(eval_model, :cost_of_operations)
         eval_cost_of_spillage = _solved_value(eval_model, :cost_of_spillage)
         eval_cost_of_borrow = _solved_value(eval_model, :cost_of_borrow)
+        eval_cost_of_soc_band = _solved_value(eval_model, :cost_of_soc_band)
         eval_n_variables = _n_variables(eval_model)
         eval_n_constraints = _n_constraints(eval_model)
         total_spillage = if !isnothing(eval_model) && haskey(eval_model, :spillage) && !isempty(eval_model[:spillage])
@@ -348,6 +399,14 @@ struct ExperimentResult
         else
             0.0
         end
+        # Total inter-period band violation (over- plus under-shoot) in the eval
+        # model: the physical seasonal-band breach the soft relaxation absorbed.
+        total_soc_band = if !isnothing(eval_model) &&
+                            haskey(eval_model, :soc_band_over) && !isempty(eval_model[:soc_band_over])
+            (value.(eval_model[:soc_band_over]) |> sum) + (value.(eval_model[:soc_band_under]) |> sum)
+        else
+            0.0
+        end
         return new(
             name,
             seed,
@@ -357,6 +416,7 @@ struct ExperimentResult
             weight_type,
             data.normalization,
             data.tol,
+            data.fix_every,
             projection_error,
             sigma_max,
             sigma_min,
@@ -378,6 +438,7 @@ struct ExperimentResult
             cost_of_operations,
             cost_of_spillage,
             cost_of_borrow,
+            cost_of_soc_band,
             n_variables,
             n_constraints,
             evaluation_termination_status,
@@ -386,10 +447,12 @@ struct ExperimentResult
             eval_cost_of_operations,
             eval_cost_of_spillage,
             eval_cost_of_borrow,
+            eval_cost_of_soc_band,
             eval_n_variables,
             eval_n_constraints,
             total_spillage,
             total_borrow,
+            total_soc_band,
             time_to_preprocess,
             time_to_cluster,
             time_to_fit_weights,
@@ -408,6 +471,7 @@ Tables.columns(res::ExperimentResult) = (;
     weight_type=[string(res.weight_type)],
     normalization=[string(res.normalization)],
     tol=[res.tol],
+    fix_every=[res.fix_every],
     projection_error=[res.projection_error],
     sigma_max=[res.sigma_max],
     sigma_min=[res.sigma_min],
@@ -429,6 +493,7 @@ Tables.columns(res::ExperimentResult) = (;
     cost_of_operations=[res.cost_of_operations],
     cost_of_spillage=[res.cost_of_spillage],
     cost_of_borrow=[res.cost_of_borrow],
+    cost_of_soc_band=[res.cost_of_soc_band],
     n_variables=[res.n_variables],
     n_constraints=[res.n_constraints],
     evaluation_termination_status=[res.evaluation_termination_status],
@@ -437,10 +502,12 @@ Tables.columns(res::ExperimentResult) = (;
     eval_cost_of_operations=[res.eval_cost_of_operations],
     eval_cost_of_spillage=[res.eval_cost_of_spillage],
     eval_cost_of_borrow=[res.eval_cost_of_borrow],
+    eval_cost_of_soc_band=[res.eval_cost_of_soc_band],
     eval_n_variables=[res.eval_n_variables],
     eval_n_constraints=[res.eval_n_constraints],
     total_spillage=[res.total_spillage],
     total_borrow=[res.total_borrow],
+    total_soc_band=[res.total_soc_band],
     time_to_preprocess=[res.time_to_preprocess],
     time_to_cluster=[res.time_to_cluster],
     time_to_fit_weights=[res.time_to_fit_weights],

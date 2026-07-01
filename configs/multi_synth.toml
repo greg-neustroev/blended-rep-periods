@@ -1,0 +1,10 @@
+# 8-reservoir phase-shifted synthetic: signed-vs-convex chain regret vs phase divergence.
+# Sweeps datasets multi_s000..s100 (phase spread 0->1, residual 0->~0.4). Per dataset:
+# reference (true cost), chain-off, signed chain, convex chain. fix_every=1, hull/convex.
+# Closability precheck = convex chain's reduced cost_of_borrow ~ 0 (else RP set can't
+# close annual balance and the regret conflates selection failure with reconstruction).
+inputs = ["synth/multi_s000","synth/multi_s025","synth/multi_s050","synth/multi_s075","synth/multi_s100"]
+seeds  = [653657]
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

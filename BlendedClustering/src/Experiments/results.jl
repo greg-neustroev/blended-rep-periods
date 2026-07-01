@@ -1,10 +1,3 @@
-# Variables exported per experiment: (model variable, index column names, output file).
-const EXPORTED_VARIABLES = [
-    (:state_of_charge_inter, [:period], "inter_period_storage_values.csv"),
-    (:state_of_charge_intra, [:rep_period, :timestep], "intra_period_storage_values.csv"),
-    (:invested_units, Symbol[], "invested_units.csv"),
-]
-
 """
     save_result_to_csv(path, result, time_to_read)
 
@@ -16,55 +9,6 @@ function save_result_to_csv(path::String, result::ExperimentResult, time_to_read
     row.time_to_read .= time_to_read
     write_header = !isfile(path)
     CSV.write(path, row; append=true, writeheader=write_header)
-end
-
-"""
-    save_variable_to_csv(model, varname, index_names, filename, outputs_dir, result_name, seed)
-
-Append the solved values of `model[varname]` to `<outputs_dir>/<result_name>/<filename>`,
-labelling the index columns with `index_names` and tagging each row with `seed`.
-Does nothing if the model is not solved or the variable is empty.
-"""
-function save_variable_to_csv(
-    model,
-    varname::Symbol,
-    index_names::Vector{Symbol},
-    filename::String,
-    outputs_dir::AbstractString,
-    result_name::AbstractString,
-    seed::Int
-)
-    if JuMP.is_solved_and_feasible(model)
-        subdir = joinpath(outputs_dir, result_name)
-        mkpath(subdir)  # ensure directory exists
-        header = [:id, index_names..., :variable]
-        df = Containers.rowtable(model[varname]; header=header) |> DataFrame
-        if isempty(df)
-            return
-        end
-
-        df.value = value.(df.variable)
-        select!(df, Not(:variable))
-        df.seed .= seed
-        select!(df, Cols(:seed, Not(:seed))) # move seed to the first column
-
-        path = joinpath(subdir, filename)
-        write_header = !isfile(path)
-
-        CSV.write(path, df; append=true, writeheader=write_header)
-    end
-end
-
-"""
-    save_variables_to_csv(model, outputs_dir, result_name, seed)
-
-Write each variable listed in [`EXPORTED_VARIABLES`](@ref) to its own CSV under
-`<outputs_dir>/<result_name>/`.
-"""
-function save_variables_to_csv(model, outputs_dir::AbstractString, result_name::AbstractString, seed::Int)
-    for (varname, index_names, filename) in EXPORTED_VARIABLES
-        save_variable_to_csv(model, varname, index_names, filename, outputs_dir, result_name, seed)
-    end
 end
 
 # Every primal variable container worth dumping in full, with the names of its
@@ -81,6 +25,8 @@ const SOLUTION_VARIABLES = [
     (:state_of_charge_inter_0, Symbol[]),
     (:spillage, [:rep_period, :timestep]),
     (:borrow, [:rep_period, :timestep]),
+    (:soc_band_over, [:period]),
+    (:soc_band_under, [:period]),
     (:flow, [:rep_period, :timestep]),
 ]
 
@@ -187,6 +133,21 @@ function save_clustering_artifacts(
 
     W = clustering_result.weight_matrix
     W === nothing || write_df("weights.arrow", _weight_table(W))
+
+    # Storage-chain weights W^ch (when the chain split was fit), dumped in the same tidy
+    # (period, rep_period, weight) form as the operational weights, plus a one-row
+    # `chain_fit.arrow` recording the chain class and the increment-reconstruction
+    # residual (the in-hull / out-of-hull diagnostic).
+    Wch = clustering_result.chain_weight_matrix
+    if Wch !== nothing
+        write_df("chain_weights.arrow", _weight_table(Wch))
+        write_df("chain_fit.arrow", DataFrame(
+            chain_weight_type=[string(get(diag, :chain_weight_type, missing))],
+            chain_fit_residual=[get(diag, :chain_fit_residual, missing)],
+            chain_max_abs_weight=[get(diag, :chain_max_abs_weight, missing)],
+            chain_max_row_l1=[get(diag, :chain_max_row_l1, missing)],
+        ))
+    end
 
     R = clustering_result.rp_matrix
     if R !== nothing && !isempty(R)

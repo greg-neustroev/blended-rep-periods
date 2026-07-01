@@ -1,0 +1,18 @@
+# Clustering-method baseline grid on sienna/5bus (chain-off storage regret).
+#
+# The "real baseline" comparison: k_means / k_medoids / hull clustering crossed with
+# dirac / convex / conical weights, at n=10, fix_every in {1,30}, no chain split. Shows
+# how the clustering method (not just the weight class) moves storage regret, alongside
+# the chain-split arms. k_means/k_medoids are seed-dependent (random init), so these are
+# a single-seed snapshot; hull is deterministic.
+#
+# Shares the sienna/5bus_fixevery data/output namespace so all arms land in one CSV.
+seeds = [653657]
+
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"
+
+[[inputs]]
+sweep = "sienna/5bus_baseline"
+data  = "sienna/5bus_fixevery"

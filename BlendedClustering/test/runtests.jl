@@ -173,6 +173,124 @@ end
     end
   end
 
+  @testset "experiment config schema: fix_every default 1 / suffixes name" begin
+    mktempdir() do dir
+      # Absent column -> default cadence, name unchanged.
+      path = joinpath(dir, "run.csv")
+      open(path, "w") do io
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,evaluation_type")
+        println(io, "5,24,hull,convex,storage_regret")
+      end
+      ed = ExperimentData(first(eachrow(read_run_data(path))), "gep")
+      @test ed.fix_every == BC.DEFAULT_FIX_EVERY
+      @test ed.name == "gep_5_24_hull_convex_$(BC.DEFAULT_PGD_TOL)"
+      # Explicit coarser cadence -> field set and name carries the suffix.
+      path2 = joinpath(dir, "run2.csv")
+      open(path2, "w") do io
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,fix_every")
+        println(io, "5,24,hull,convex,0.01,storage_regret,7")
+      end
+      ed2 = ExperimentData(first(eachrow(read_run_data(path2))), "gep")
+      @test ed2.fix_every == 7
+      @test ed2.name == "gep_5_24_hull_convex_0.01_fixevery7"
+    end
+  end
+
+  @testset "experiment config schema: chain_weight_type default none / suffixes name" begin
+    mktempdir() do dir
+      # Absent column -> chain split off, name unchanged.
+      path = joinpath(dir, "run.csv")
+      open(path, "w") do io
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,evaluation_type")
+        println(io, "5,24,hull,convex,storage_regret")
+      end
+      ed = ExperimentData(first(eachrow(read_run_data(path))), "gep")
+      @test ed.chain_weight_type == BC.DEFAULT_CHAIN_WEIGHT_TYPE
+      @test ed.chain_weight_type == :none
+      @test ed.name == "gep_5_24_hull_convex_$(BC.DEFAULT_PGD_TOL)"
+      # Explicit chain split -> field set and name carries the `_chain<class>` suffix.
+      path2 = joinpath(dir, "run2.csv")
+      open(path2, "w") do io
+        println(io, "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,chain_weight_type")
+        println(io, "5,24,hull,convex,0.01,storage_regret,signed")
+      end
+      ed2 = ExperimentData(first(eachrow(read_run_data(path2))), "gep")
+      @test ed2.chain_weight_type == :signed
+      @test ed2.name == "gep_5_24_hull_convex_0.01_chainsigned"
+    end
+  end
+
+  @testset "fit_chain_weights: signed closed-form + bounded classes" begin
+    fcw = BC.TemporalClustering.fit_chain_weights
+    # 2 assets x 6 base periods, 3 representatives.
+    G = [1.0 3.0 2.0 5.0 0.0 4.0;
+         2.0 1.0 0.0 3.0 1.0 2.0]
+    sel = [1, 4, 6]
+    Gc = G .- sum(G; dims=2) ./ size(G, 2)
+    # Signed: exact reconstruction, exact column-sum-zero closure, signed entries.
+    W, res = fcw(G, sel; weight_type=:signed)
+    @test size(W) == (6, 3)                        # D x R, same shape as W^op
+    @test all(abs.(vec(sum(W, dims=1))) .< 1e-10)  # 1' W^ch = 0 (cyclic closure)
+    @test maximum(abs.(Gc[:, sel] * transpose(W) - Gc)) < 1e-9
+    @test res < 1e-9                               # residual ~ 0 (full row rank)
+    @test any(W .< -1e-6)                          # signed
+    # Convex: simplex rows (sum to 1, nonnegative) — cannot carry the closure gauge.
+    Wc, resc = fcw(G, sel; weight_type=:convex)
+    @test all(Wc .>= -1e-9)
+    @test all(abs.(vec(sum(Wc, dims=2)) .- 1.0) .< 1e-6)   # rows sum to 1
+    @test resc >= -1e-12                            # residual defined (>=0)
+    # Clipped affine: sum-1 rows with |w| ≤ 1 (convex + bounded negatives); never
+    # reconstructs worse than convex (superset), and bounded by construction.
+    Wca, resca = fcw(G, sel; weight_type=:clipped_affine)
+    @test all(abs.(vec(sum(Wca, dims=2)) .- 1.0) .< 1e-6)  # rows sum to 1
+    @test all(abs.(Wca) .<= 1.0 + 1e-9)                    # |w| ≤ 1 (bounded)
+    @test resca <= resc + 1e-9                             # ⊇ convex ⇒ residual ≤ convex
+    # Affine: sum-1, unbounded.
+    Waf, _ = fcw(G, sel; weight_type=:affine)
+    @test all(abs.(vec(sum(Waf, dims=2)) .- 1.0) .< 1e-6)
+    # Sub-unit conic: nonneg, row sum ≤ 1 (contraction in ℓ∞-induced norm), balance-relaxed.
+    Wsc, _ = fcw(G, sel; weight_type=:conical_bounded)
+    @test all(Wsc .>= -1e-9)
+    @test all(vec(sum(Wsc, dims=2)) .<= 1.0 + 1e-6)
+    # ℓ1-ball: signed contraction — row ℓ1 ≤ 1 (so ‖W‖_{∞→∞} ≤ 1) with free signs.
+    Wl1, _ = fcw(G, sel; weight_type=:l1_ball)
+    @test all(vec(sum(abs, Wl1, dims=2)) .<= 1.0 + 1e-6)   # contraction, signs free
+  end
+
+  @testset "project_l1_ball: ℓ1 contraction with free signs" begin
+    pl1 = BC.TemporalClustering.project_l1_ball
+    for _ in 1:300
+      n = rand(2:12); v = randn(n) .* 2.0
+      w = pl1(v)
+      @test sum(abs, w) <= 1.0 + 1e-9                      # in the ℓ1 ball
+      if sum(abs, v) <= 1.0
+        @test w ≈ v                                        # interior ⇒ identity
+      else
+        @test isapprox(sum(abs, w), 1.0; atol=1e-9)        # boundary ⇒ ‖w‖₁ = 1
+        @test all(sign.(w) .* sign.(v) .>= -1e-12)         # signs preserved
+      end
+    end
+  end
+
+  @testset "project_box_sum: true projection + the project-then-clip trap" begin
+    pbs = BC.TemporalClustering.project_box_sum
+    for _ in 1:300
+      n = rand(2:12); v = randn(n) .* 3.0
+      w = pbs(v; lo=-1.0, hi=1.0, s=1.0)
+      @test isapprox(sum(w), 1.0; atol=1e-9)
+      @test all(-1.0 - 1e-9 .<= w .<= 1.0 + 1e-9)
+      # lo=0 recovers the simplex (convex); clipped affine is a superset ⇒ never farther.
+      wc = pbs(v; lo=0.0, hi=1.0, s=1.0)
+      @test all(wc .>= -1e-9)
+      @test norm(w - v) <= norm(wc - v) + 1e-9
+    end
+    # The trap: project-then-clip breaks the sum on a valid witness; the true projector does not.
+    v = [5.0, 0.0, 0.0]
+    ptc = clamp.(v .+ (1.0 - sum(v)) / 3, -1.0, 1.0)
+    @test !isapprox(sum(ptc), 1.0; atol=1e-6)              # sum broken (-1)
+    @test isapprox(sum(pbs(v; lo=-1.0, hi=1.0, s=1.0)), 1.0; atol=1e-9)
+  end
+
   @testset "resolve_input + cross-sweep experiment identity" begin
     ri = BC.Experiments.resolve_input
     @test ri("tyndp/gep") == ("tyndp/gep", "tyndp/gep")

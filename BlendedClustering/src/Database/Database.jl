@@ -13,7 +13,7 @@ import Tables: columns
 export read_data_from_dir
 export create_views, create_common_views
 export get_index_set, get_scalar
-export get_clustering_profiles, count_profile_periods, get_single_period_profiles
+export get_clustering_profiles, count_profile_periods, get_single_period_profiles, get_inflow_peaks
 export get_economic_scaling_data
 
 include("ingestion.jl")   # CSV files -> DuckDB tables
