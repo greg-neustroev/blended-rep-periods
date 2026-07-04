@@ -94,7 +94,7 @@ conic hull in Step 1, which is why economic + conic works as a pair.
 ## 4. Step 1 — Selection (which days are representatives)
 
 **Options:** `k_means` · `k_medoids` · `hierarchical` (traditional baselines) ·
-`convex_hull` · **`conical_hull`** (proposed).
+`convex_hull` · `convex_hull_with_null` · **`conical_hull`** (proposed).
 
 Selection is now specified **independently of the weight class** — the historical `:hull`
 alias, whose hull geometry was silently inferred from the weight type, has been removed. You
@@ -125,7 +125,8 @@ is not part of the proposed method.
 
 ## 5. Step 2 — Weight fitting (the quadrature rule)
 
-**Ops options:** `dirac` (nearest-rep, no blending) · **`convex`** (proposed) · `conical`.
+**Ops options:** `dirac` (nearest-rep, no blending) · **`convex`** (proposed) · `conical` ·
+`conical_bounded` (sub-unit conic).
 **Chain options (storage only):** `none` · **`convex`** (proposed) · `conical`.
 
 Weights are fit by projected gradient descent (Condat's simplex projection for convex, the
@@ -182,19 +183,20 @@ storage regret; a single matrix playing both roles is far worse.
 
 "Implement only what the method needs." Removed from the code on this branch:
 
-* **Ops weight class `conical_bounded`** (sub-unit conic) — an exploration arm; the ops class
-  is `dirac` / `convex` / `conical`.
 * **Chain classes `signed`, `l1_ball`, `clipped_affine`, `affine`** — all dead ends. The
   proven chain mechanism is non-negativity (interpolation); the chain class is `convex` /
   `conical`. The three projectors that served only the removed classes (`project_box_sum`,
   `project_subunit_conic`, `project_l1_ball`) are gone.
-* **Selection `convex_hull_with_null`** and the **`:hull` alias** — the former existed only to
-  support `conical_bounded`; the latter coupled hull geometry to the weight class. Selection
-  is now `:convex_hull` / `:conical_hull`, named independently of weights.
+* **The `:hull` alias** — it coupled hull geometry to the weight class. Selection is now named
+  explicitly (`:convex_hull`, `:convex_hull_with_null`, `:conical_hull`), independent of the
+  weight class.
 * **The bespoke usage-informed residual-load *seeding* and price-*ladder* selection metrics**
   are *not* part of the proposed method: they were a wash against economic + conic hull, and
   unstable/wrong-channel where distinct. Their lasting value is the *explanation* (§3–§4) for
   why economic + conic works, not a separate arm.
+
+Retained as available (non-proposed) options for comparison: the sub-unit-conic weight class
+`conical_bounded` and its null-augmented hull selection `convex_hull_with_null`.
 
 ---
 

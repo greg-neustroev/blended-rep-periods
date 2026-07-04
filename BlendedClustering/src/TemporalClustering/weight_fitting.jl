@@ -180,6 +180,8 @@ The arguments:
         representative periods (a sum with nonnegative weights adding into one)
       - `:conical`: each period is represented as a conical sum of the
         representative periods (a sum with nonnegative weights)
+      - `:conical_bounded`: a conical sum (nonnegative weights) whose total weight is
+        bounded above by one (the sub-unit conic class)
   - `tol`: the resolution to which weights are determined; the single tolerance
     used throughout fitting. The projected gradient descent stops once no weight
     moves by more than `tol`, base periods already reconstructed within `tol` skip
@@ -201,8 +203,15 @@ function fit_rep_period_weights!(
     projection = project_onto_simplex
   elseif weight_type ≡ :conical
     projection = project_onto_nonnegative_orthant
+  elseif weight_type ≡ :conical_bounded
+    # Sub-unit conic: convex fitting with an extra zero component appended. The
+    # weight of that zero vector is then discarded without affecting the total, so
+    # the remaining weights are nonnegative with a sum between zero and one.
+    projection = project_onto_simplex
+    n_data_points = size(rp_matrix, 1)
+    rp_matrix = hcat(repeat([0.0], n_data_points), rp_matrix)
   else
-    throw(ArgumentError("Unsupported weight type $(weight_type); expected :dirac, :convex, or :conical."))
+    throw(ArgumentError("Unsupported weight type $(weight_type); expected :dirac, :convex, :conical, or :conical_bounded."))
   end
 
   n_periods = size(clustering_matrix, 2)
@@ -215,6 +224,10 @@ function fit_rep_period_weights!(
   # essentially unchanged but produced markedly worse storage-regret trajectories,
   # and the selector always kept this default anyway.
   initial_weight_matrix = weight_matrix' |> Matrix{Float64}
+  if weight_type ≡ :conical_bounded
+    # A zero row matches the zero column appended to rp_matrix above.
+    initial_weight_matrix = vcat(zeros(1, size(initial_weight_matrix, 2)), initial_weight_matrix)
+  end
   for col in eachcol(initial_weight_matrix)
     col .= projection(col)
   end
@@ -249,10 +262,18 @@ function fit_rep_period_weights!(
     # `x .< tol` is equivalent to `abs.(x) .< tol` (no `abs` needed) and captures
     # exactly the contributions too small to matter (e.g. < 1% for tol = 1e-2).
     x[x.<tol] .= 0.0
-    if weight_type ≡ :convex
-      # Because some values might have been removed, convexity can be lost.
+    if weight_type ≡ :convex || weight_type ≡ :conical_bounded
+      # Because some values might have been removed, convexity can be lost. In the
+      # upper-bounded case the sum can also drift slightly above one from rounding.
       # To account for these cases, the weights are re-normalized.
-      x = x ./ sum(x)
+      sum_x = sum(x)
+      if weight_type ≡ :convex || sum_x > 1.0
+        x = x ./ sum_x
+      end
+    end
+    if weight_type ≡ :conical_bounded
+      # Drop the null component; the remaining weights sum to at most one.
+      popfirst!(x)
     end
     if is_sparse
       x = sparse(x)
@@ -276,7 +297,7 @@ The arguments:
   - `clustering_result`: the result of running
     `find_representative_periods`
   - `weight_type`: the type of weights to find; possible values are `:dirac`,
-    `:convex`, and `:conical` (see the primary method).
+    `:convex`, `:conical`, and `:conical_bounded` (see the primary method).
   - `tol`: the resolution to which weights are determined; the single tolerance
     used throughout fitting (see the primary method).
 """

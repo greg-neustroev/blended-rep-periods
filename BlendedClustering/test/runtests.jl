@@ -82,7 +82,7 @@ end
 
   @testset "find_representative_periods: every method" begin
     df = synthetic_clustering_df(seed=3)
-    for m in (:k_means, :k_medoids, :hierarchical, :convex_hull, :conical_hull)
+    for m in (:k_means, :k_medoids, :hierarchical, :convex_hull, :convex_hull_with_null, :conical_hull)
       res = find_representative_periods(df, 3; method=m)
       @test size(res.rp_matrix, 2) == 3
       @test size(res.weight_matrix, 2) == 3
@@ -101,9 +101,25 @@ end
     W = Matrix(fit_rep_period_weights!(
       find_representative_periods(df, 3; method=:k_means); weight_type=:conical))
     @test all(W .>= -1e-8)
-    # A pruned/unsupported weight class is rejected rather than silently accepted.
+    # Sub-unit conic: nonnegative rows summing to at most one.
+    W = Matrix(fit_rep_period_weights!(
+      find_representative_periods(df, 3; method=:k_means); weight_type=:conical_bounded))
+    @test all(W .>= -1e-8)
+    @test all(sum(W, dims=2) .<= 1 + 1e-6)
+    # A genuinely unsupported weight class is still rejected.
     @test_throws ArgumentError fit_rep_period_weights!(
-      find_representative_periods(df, 3; method=:k_means); weight_type=:conical_bounded)
+      find_representative_periods(df, 3; method=:k_means); weight_type=:l1_ball)
+  end
+
+  @testset "sub-unit conic fitting is robust when features == RPs + 1" begin
+    # Here rp_matrix is square and, once a zero column is appended for the
+    # null-point trick, singular; the pseudoinverse initial guess keeps fitting
+    # well-defined where `rp_matrix \\ clustering_matrix` would throw.
+    df = synthetic_clustering_df(n_timesteps=2, assets=["a", "b"], seed=7)  # 4 features
+    res = find_representative_periods(df, 3; method=:k_means)               # 4x3 RP matrix
+    W = Matrix(fit_rep_period_weights!(res; weight_type=:conical_bounded))
+    @test all(W .>= -1e-8)
+    @test all(sum(W, dims=2) .<= 1 + 1e-6)
   end
 
   @testset "experiment config schema: optional tol defaults" begin

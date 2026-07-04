@@ -542,6 +542,16 @@ function select_representatives(
     rp_matrix = matrix[:, hull_indices]
     assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
     selected_indices = hull_indices
+  elseif method ≡ :convex_hull_with_null
+    # Add a null vector as a column, run the convex-hull method initialized at
+    # it, then drop it; the remaining positive weights sum to at most one.
+    augmented = [zeros(size(matrix, 1), 1) matrix]
+    hull_indices = greedy_convex_hull(augmented; n_points=n_rp + 1, initial_indices=[1], tol, cache, stats)
+    popfirst!(hull_indices)
+    hull_indices .-= 1
+    rp_matrix = matrix[:, hull_indices]
+    assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
+    selected_indices = hull_indices
   elseif method ≡ :conical_hull
     normal_vector = vec(mean(matrix, dims=2))
     normalize!(normal_vector)
@@ -696,8 +706,8 @@ Finds representative periods via data clustering. All distances are Euclidean.
     is done for `n_rp - 1` periods, and the last period is added as a special
     shorter representative period
   - `method`: clustering method to use; one of `:k_means`, `:k_medoids`,
-    `:hierarchical`, `:convex_hull`, `:conical_hull` (selection is chosen
-    independently of the weight class)
+    `:hierarchical`, `:convex_hull`, `:convex_hull_with_null`, `:conical_hull`
+    (selection is chosen independently of the weight class)
   - `tol`: the projected gradient descent tolerance `ε` used by the hull methods
     to rank candidate periods by their distance to the current hull (ignored by
     `:k_means`/`:k_medoids`).
@@ -1007,7 +1017,7 @@ function single_period_clustering_result(connection)
 end
 
 function clustering_type_to_method(clustering_type)
-    supported = (:k_means, :k_medoids, :hierarchical, :convex_hull, :conical_hull)
+    supported = (:k_means, :k_medoids, :hierarchical, :convex_hull, :convex_hull_with_null, :conical_hull)
     clustering_type ∈ supported || throw(ArgumentError(
         "Unsupported clustering_type $(clustering_type); expected one of $(supported). " *
         "Selection is now specified independently of the weight class: name :convex_hull " *
