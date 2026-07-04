@@ -1,8 +1,27 @@
-# Sienna 5-bus case study (also carries the sensitivity factorial).
-inputs = ["sienna/5bus"]
+# Sienna 5-bus case study (storage) — proposed-method deliverable.
+#
+# Runs, against the sienna/5bus data and output namespace:
+#   - inputs/sienna/5bus.csv      : comparison (k-means / k-medoids / hierarchical vs the
+#                                   proposed economic + conical-hull + convex + convex-chain
+#                                   method) and the component ablation (−economic,
+#                                   −conic-selection, −convex-weights, −chain-split).
+#   - inputs/sienna/sens_5bus.csv : tolerance × normalization sensitivity at n_rp = 10.
+# The sensitivity sweep keys off the SAME data ("sienna/5bus"), so the shared full-horizon
+# reference and the tol=0.01/economic proposed arm are recorded once and not re-solved.
+#
+# storage_regret is graded with fix_every = 30 (every 30th period boundary pinned), which
+# grades the seasonal trajectory the RP method is meant to deliver; day-exact pinning
+# (fix_every = 1) manufactures regret proportional to the number of checkpoints.
+#
+# Seeds: hull / k-medoids / hierarchical arms are deterministic; only k-means depends on
+# the seed. n_seeds = 3 — drop to 1 for a quick pass (5bus is cheap), raise for k-means.
+inputs = [
+  "sienna/5bus",
+  { sweep = "sienna/sens_5bus", data = "sienna/5bus" },
+]
 
 master_seed = 382507
-n_seeds     = 10
+n_seeds     = 3
 
 solver      = "gurobi"
 inputs_dir  = "../inputs"

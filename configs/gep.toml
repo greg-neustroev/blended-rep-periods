@@ -1,8 +1,23 @@
-# Generation Expansion Planning case study (also carries the tol/normalization/init sensitivity factorial).
-inputs = ["tyndp/gep"]
+# Generation Expansion Planning (GEP) case study — proposed-method deliverable.
+#
+# Runs, against the tyndp/gep data and output namespace:
+#   - inputs/tyndp/gep.csv       : comparison (k-means / k-medoids / hierarchical vs the
+#                                  proposed economic + conical-hull + convex method) and the
+#                                  component ablation (−economic, −conic-selection, −convex).
+#   - inputs/tyndp/sens_gep.csv  : tolerance × normalization sensitivity at n_rp = 10.
+# The sensitivity sweep keys off the SAME data ("tyndp/gep"), so the shared full-horizon
+# reference and the tol=0.01/economic proposed arm are recorded once and not re-solved.
+#
+# Seeds: every hull / k-medoids / hierarchical arm is deterministic (identical regret across
+# seeds); only k-means depends on the seed. n_seeds = 3 gives k-means a little variance at
+# modest cost — drop to 1 for a quick first pass, raise it if k-means variance matters.
+inputs = [
+  "tyndp/gep",
+  { sweep = "tyndp/sens_gep", data = "tyndp/gep" },
+]
 
 master_seed = 382507
-n_seeds     = 10
+n_seeds     = 3
 
 solver      = "gurobi"
 inputs_dir  = "../inputs"
