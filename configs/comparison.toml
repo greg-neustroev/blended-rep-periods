@@ -1,0 +1,17 @@
+# Comparison — the full clustering × weight matrix on the HELD-OUT test systems (GEP, P2X,
+# 118-bus), which the method was never tuned on. We do not presuppose the selection method or
+# the weight type: every clustering ∈ {k_means, k_medoids, hierarchical, chronological,
+# convex_hull, conical_hull} × weight ∈ {dirac, convex, conical, conical_bounded} is run, at
+# the economic normalization (normalization × tol robustness lives in the 5bus sensitivity),
+# over n_rp ∈ {5,10,20,40,80}. GEP is investment; P2X/118-bus are storage graded day-exact
+# (fix_every=1) with the convex chain on every real-period method (k-means is the no-chain
+# baseline). 24 combos × 5 RP = 120 arms/dataset — a large run.
+#
+# Only k-means is seed-sensitive; n_seeds = 3 (set 1 for a quick first pass, more for k-means
+# variance bars). The 20 non-k-means combos are deterministic across seeds.
+inputs = ["tyndp/gep", "tyndp/p2x", "sienna/118bus"]
+master_seed = 382507
+n_seeds     = 3
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

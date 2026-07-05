@@ -561,6 +561,24 @@ function select_representatives(
     rp_matrix = matrix[:, hull_indices]
     assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
     selected_indices = hull_indices
+  elseif method ≡ :chronological
+    # Sequential linked time-period blocks: partition the base periods into `n_rp`
+    # contiguous, (near-)equal-length segments in chronological order; each segment's
+    # representative is its medoid (the member nearest the rest, like k-medoids), and
+    # every period is assigned to its own segment. An order-preserving, non-clustering
+    # baseline (no feature-space grouping — grouping is by time alone).
+    n_cols = size(matrix, 2)
+    distance_matrix = pairwise(Euclidean(), matrix; dims=2)
+    edges = round.(Int, range(0, n_cols; length=n_rp + 1))
+    assignments = Vector{Int}(undef, n_cols)
+    medoids = Vector{Int}(undef, n_rp)
+    for k ∈ 1:n_rp
+      members = (edges[k]+1):edges[k+1]
+      assignments[members] .= k
+      medoids[k] = members[argmin([sum(@view distance_matrix[m, members]) for m ∈ members])]
+    end
+    rp_matrix = matrix[:, medoids]
+    selected_indices = medoids
   else
     throw(ArgumentError("Clustering method is not supported"))
   end
@@ -705,7 +723,9 @@ Finds representative periods via data clustering. All distances are Euclidean.
     is dropped and the weights are rescaled accordingly; otherwise, clustering
     is done for `n_rp - 1` periods, and the last period is added as a special
     shorter representative period
-  - `method`: clustering method to use, either `:k_means` and `:k_medoids`
+  - `method`: clustering method to use; one of `:k_means`, `:k_medoids`,
+    `:hierarchical`, `:chronological`, `:convex_hull`, `:convex_hull_with_null`,
+    `:conical_hull` (selection is chosen independently of the weight class)
   - `tol`: the projected gradient descent tolerance `ε` used by the hull methods
     to rank candidate periods by their distance to the current hull (ignored by
     `:k_means`/`:k_medoids`).
@@ -734,7 +754,7 @@ Finds representative periods via data clustering. All distances are Euclidean.
     integrated-inflow rows (under `:unscaled`/`:minmax` it cancels against the
     per-period-peak normalizer); defaults to `1.0` and is otherwise unused.
   - `chain_weight_type`: when not `:none`, additionally fit the storage-chain weights
-    `W^ch` of this class (`:signed`, `:convex`, `:conical`; see [`fit_chain_weights`](@ref))
+    `W^ch` of this class (`:convex`, `:conical`; see [`fit_chain_weights`](@ref))
     and attach them to the result's `chain_weight_matrix`, so the storage-chain
     (prolongation) role can use a separate blend from the operational weights. Requires
     representatives that are real base periods (hull / k-medoids) and inflow data;
@@ -909,7 +929,7 @@ function find_representative_periods(
   # Optionally fit the chain weights W^ch for the storage-chain role. They are a
   # *separate* fit from the operational weights above, on the per-period storage-increment
   # proxy (net inflow energy E^max_s·Σ_h E_{s,d,h}) over the representatives' columns;
-  # `chain_weight_type` picks the class (`:signed` closed-form, `:convex`, `:conical`).
+  # `chain_weight_type` picks the (non-negative) class (`:convex`, `:conical`).
   # Only the actual base-period representatives can serve as chain anchors, so this needs
   # `selected_indices` (hull / k-medoids), and the increment proxy needs inflow data; both
   # are required errors rather than silent fallbacks. The incomplete-last-period case is
@@ -928,9 +948,8 @@ function find_representative_periods(
     result.chain_weight_matrix = Wch
     result.diagnostics[:chain_weight_type] = chain_weight_type
     result.diagnostics[:chain_fit_residual] = chain_residual
-    # Boundedness diagnostics: max|W^ch| separates bounded (convex/clipped_affine ≤ 1)
-    # from unbounded (affine/signed) classes; max row ℓ1 measures how much sign freedom
-    # was actually used (= 1 for convex; > 1 only when negative weights were taken).
+    # Boundedness diagnostics: max|W^ch| and the max row ℓ1. For convex rows the ℓ1 sum
+    # is 1 (partition of unity); for conical it may exceed 1 (nonnegative, unbounded above).
     result.diagnostics[:chain_max_abs_weight] = maximum(abs, Wch)
     result.diagnostics[:chain_max_row_l1] = maximum(sum(abs, Wch; dims=2))
   end
@@ -941,7 +960,6 @@ function cluster_using_experiment_data(experiment_data, connection)
   # Extract parameters from the experiment data into local variables
   n_rep_periods = experiment_data.n_rep_periods
   clustering_type = experiment_data.clustering_type
-  weight_type = experiment_data.weight_type
   normalization = experiment_data.normalization
 
   # Fast path: when a single representative period is requested and the data
@@ -955,10 +973,7 @@ function cluster_using_experiment_data(experiment_data, connection)
   # Collect the clustering data into a data frame
   clustering_df = get_clustering_profiles(connection)
   # Determine the clustering method
-  clustering_method = clustering_type_to_method(
-    clustering_type,
-    weight_type
-  )
+  clustering_method = clustering_type_to_method(clustering_type)
   # Select the normalization. `:unscaled` (default) clusters on the profiles as
   # stored; `:minmax` rescales each feature row to [0,1]; `:economic` builds the
   # per-feature physical/economic scale and logs the dataset-level diagnostics.
@@ -1019,16 +1034,13 @@ function single_period_clustering_result(connection)
   return ClusteringResult(rp_df, weight_matrix, clustering_matrix, rp_matrix)
 end
 
-function clustering_type_to_method(clustering_type, weight_type)
-    if clustering_type ≡ :hull
-        if weight_type ≡ :conical
-            :conical_hull
-        elseif weight_type ≡ :conical_bounded
-            :convex_hull_with_null
-        else
-            :convex_hull
-        end
-    else
-        clustering_type
-    end
+function clustering_type_to_method(clustering_type)
+    supported = (:k_means, :k_medoids, :hierarchical, :chronological,
+        :convex_hull, :convex_hull_with_null, :conical_hull)
+    clustering_type ∈ supported || throw(ArgumentError(
+        "Unsupported clustering_type $(clustering_type); expected one of $(supported). " *
+        "Selection is now specified independently of the weight class: name :convex_hull " *
+        "or :conical_hull directly (the old :hull alias, whose hull geometry was inferred " *
+        "from the weight type, has been removed)."))
+    return clustering_type
 end

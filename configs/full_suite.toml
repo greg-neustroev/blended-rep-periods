@@ -1,9 +1,23 @@
-# Full suite: every case study in one run.
-inputs = ["tyndp/gep", "tyndp/p2x", "tyndp/sep", "sienna/5bus", "sienna/118bus", "gridmod/rts"]
-
+# Full revision campaign, cheap → expensive. Held-out methodology:
+#   development (5bus): sensitivity (clustering × weight × normalization × tol) + ablation
+#   held-out comparison (GEP / P2X / 118-bus): full clustering × weight matrix at economic
+#   large-scale (RTS, last): reduced comparison + RP scaling into the hundreds
+#
+# We presuppose neither the selection method nor the weight type; storage is graded day-exact
+# (fix_every=1) with the convex chain on every real-period method. All arms dedup by name
+# (resume-safe). Only k-means is seed-sensitive; the comparison is 120 arms/dataset, so a first
+# pass with n_seeds=1 is cheap and only k-means loses its variance bars. Stop before RTS if
+# time is short — everything earlier is independently useful.
+inputs = [
+  { sweep = "sienna/sens_5bus", data = "sienna/5bus" },  # sensitivity   (5bus, dev)
+  "sienna/5bus",                                          # ablation      (5bus, dev)
+  "sienna/118bus",                                        # comparison    (held out)
+  "tyndp/p2x",
+  "tyndp/gep",
+  "gridmod/rts",                                          # large-scale   (last)
+]
 master_seed = 382507
-n_seeds     = 10
-
+n_seeds     = 3
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

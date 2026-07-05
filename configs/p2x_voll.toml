@@ -1,9 +1,0 @@
-# P2X with a real VOLL (seasonal borrow_cost 1->10 kEUR (VOLL)): does a SEPARATE convex W^ch on
-# the increment target (split) beat a SINGLE convex matrix on operational features, in
-# P2X's target-disagreement regime (convex chain residual 0.17)? Arms: chain-off convex
-# (single matrix) vs convex-chain split. Reference for true cost.
-inputs = ["tyndp/p2x_voll"]
-seeds  = [653657]
-solver      = "gurobi"
-inputs_dir  = "../inputs"
-outputs_dir = "../outputs"

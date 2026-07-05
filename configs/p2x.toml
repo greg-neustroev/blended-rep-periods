@@ -1,9 +1,10 @@
-# Power-to-X dispatch case study (seasonal storage).
+# P2X dispatch (European, storage) — held-out comparison, run individually. Full clustering ×
+# weight matrix (24 combos) at economic, n_rp ∈ {5,10,20,40,80}; also part of comparison.toml.
+# storage_regret graded day-exact (fix_every=1); convex chain on every real-period method,
+# off for k-means. Only k-means is seed-sensitive.
 inputs = ["tyndp/p2x"]
-
 master_seed = 382507
-n_seeds     = 10
-
+n_seeds     = 3
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

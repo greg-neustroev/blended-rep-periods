@@ -1,3 +1,3 @@
 id,initial_storage_level,peak_inflow,spillage_cost,borrow_cost,can_charge
-HydroDispatch1,384.3000,50.0,0.0,10000.0,false
-HydroDispatch3,1537.2000,50.0,0.0,10000.0,false
+HydroDispatch1,384.3000,50.0,0.0,10.0,false
+HydroDispatch3,1537.2000,50.0,0.0,10.0,false

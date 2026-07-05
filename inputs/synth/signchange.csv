@@ -1,5 +1,0 @@
-n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,normalization,inflow_integral_weight,fix_every,chain_weight_type
-1,288,k_means,dirac,0.01,none,unscaled,0.0,1,none
-4,24,hull,convex,0.0001,storage_regret,unscaled,0.0,1,none
-4,24,hull,convex,0.0001,storage_regret,unscaled,0.0,1,signed
-4,24,hull,convex,0.0001,storage_regret,unscaled,0.0,1,convex

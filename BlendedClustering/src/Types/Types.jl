@@ -51,12 +51,10 @@ const DEFAULT_FIX_EVERY = 1
 # matrix plays both roles (operational and storage-chain), the historical behaviour. Any
 # other value fits a *separate* chain weight matrix W^ch (see `fit_chain_weights`) for
 # the inter-period storage chain, while the operational weights keep their role in the
-# objective and ramping. Supported chain classes:
-#   - `:signed`  — unconstrained closed-form (pseudoinverse) fit on the inflow-increment
-#                  data, projected to exact column-sum-zero closure (the seasonal arm);
+# objective and ramping. Supported (non-negative) chain classes:
 #   - `:convex`  — convex (simplex) fit, partition-of-unity rows (annual balance earned
-#                  by dispatch, not the closure gauge);
-#   - `:conical` — conical (nonnegative) fit.
+#                  by dispatch, not a closure gauge);
+#   - `:conical` — conical (nonnegative-orthant) fit.
 const DEFAULT_CHAIN_WEIGHT_TYPE = :none
 
 
