@@ -1,0 +1,13 @@
+# Comparison (Study 3) — the PROPOSED method (fixed on the 5bus development system) vs the
+# traditional baselines, on the HELD-OUT test systems it was never tuned on. Each dataset's
+# sweep runs k-means / k-medoids / hierarchical / chronological (dirac, unscaled) vs PROPOSED,
+# over n_rp ∈ {5,10,20,40,80}. GEP is investment (regret fixes capacity); P2X and 118-bus are
+# storage (regret grades the seasonal trajectory at fix_every = 30).
+#
+# Only k-means is seed-sensitive; n_seeds = 5 for its variance bars. Drop to 1 for a quick pass.
+inputs = ["tyndp/gep", "tyndp/p2x", "sienna/118bus"]
+master_seed = 382507
+n_seeds     = 5
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

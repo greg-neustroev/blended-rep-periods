@@ -217,20 +217,33 @@ Retained as available (non-proposed) options for comparison: the sub-unit-conic 
 
 ---
 
-## 9. Experiment design
+## 9. Experiment design (held-out methodology)
 
-All three studies run on **5bus** and **GEP** off the same pipeline; each is a curated sweep
-CSV (`inputs/…`) + config TOML (`configs/…`). Regret is
-`evaluated_objective_value / reference_optimum − 1`, where the reference optimum is the
-`n_rep = 1, evaluation = none` full-horizon solve (first row of each sweep).
+Datasets play distinct roles so the method is never tuned on the systems it is judged on.
+Each study is a curated sweep CSV (`inputs/…`) + config TOML (`configs/…`); regret is
+`evaluated_objective_value / reference_optimum − 1` (reference = the `n_rep=1` full-horizon
+solve). RP grids cap at 80 for the ~365-period systems; RTS scales higher.
 
-* **Comparison** — traditional `k_means` / `k_medoids` / `hierarchical` (in their natural
-  form: `dirac` weights, `unscaled`) vs the **proposed** method, across an RP grid.
-* **Ablation** — start from the proposed config and knock out one component at a time
-  (economic → unscaled; conical_hull → convex_hull; convex → dirac; and, for 5bus, chain
-  `convex` → `none`), to show each earns its keep.
-* **Sensitivity** — sweep the PGD tolerance `tol ∈ {1e-2, 1e-3, 1e-4}` (and normalisation) at
-  a fixed RP count, to show the method is robust to the one real hyperparameter.
+* **5bus — development system** (`configs/5bus.toml`):
+  - **Sensitivity** — *every* clustering type × normalisation × PGD tolerance
+    (`{1e-2,1e-3,1e-4,1e-5}`) at n_rp=10, convex weights, chain off. The selection method and
+    its hyperparameters are chosen here, and per-method hyperparameter robustness is measured
+    (we do not presuppose conic+convex wins). α is fixed at 1/L (Lipschitz-optimal) and the
+    iteration count is not imposed — the realised N(ε) is reported; a cache-on/off pair
+    validates the greedy-hull cache.
+  - **Ablation** — proposed vs each single-component knockout (−economic, −conic-selection,
+    −convex-weights, −chain-split) across n_rp ∈ {5,10,20,40,80}.
+* **GEP, P2X, 118-bus — held-out test systems** (`configs/comparison.toml`): the method +
+  hyperparameters fixed on 5bus, compared against traditional k-means / k-medoids /
+  hierarchical / chronological (dirac, unscaled) across the RP grid. No sensitivity or
+  ablation here — no tuning on the test systems.
+* **RTS-GMLC — large-scale / scaling** (`configs/rts.toml`, run last): 5-minute data with
+  6-hour periods (1464 base periods), where RP scales into the hundreds ({160,320,500}) for
+  the runtime / weight-fit-bottleneck curve.
+
+Reported metrics (all from recorded columns, or the invested-units dumps): regret with seed
+variance, cost breakdown, curtailment & feasibility (borrow, weight-sum > 1), capacity-decision
+differences (GEP), and per-stage runtime with N(ε) and cache hit-rate.
 
 ---
 

@@ -1,9 +1,0 @@
-# Battery Storage Expansion Planning case study (investable batteries on P2X data).
-inputs = ["tyndp/sep"]
-
-master_seed = 382507
-n_seeds     = 10
-
-solver      = "gurobi"
-inputs_dir  = "../inputs"
-outputs_dir = "../outputs"

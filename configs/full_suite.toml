@@ -1,9 +1,22 @@
-# Full suite: every case study in one run.
-inputs = ["tyndp/gep", "tyndp/p2x", "tyndp/sep", "sienna/5bus", "sienna/118bus", "gridmod/rts"]
-
+# Full revision campaign, cheap → expensive. Held-out methodology:
+#   Studies 1–2  sensitivity + ablation on 5bus (development system)
+#   Study 3      comparison on GEP / P2X / 118-bus (held out — no tuning on them)
+#   Study 4      large-scale / RP-scaling on RTS (last)
+#
+# All arms dedup by name across sweeps (resume-safe), so running this after the individual
+# configs re-solves nothing. Only k-means is seed-sensitive; n_seeds = 5 gives its variance
+# bars — drop to 1 for a quick first pass. Under time pressure, stop before RTS: everything
+# earlier is independently useful.
+inputs = [
+  { sweep = "sienna/sens_5bus", data = "sienna/5bus" },  # 1  sensitivity   (5bus, dev)
+  "sienna/5bus",                                          # 2  ablation      (5bus, dev)
+  "sienna/118bus",                                        # 3  comparison    (held out)
+  "tyndp/p2x",
+  "tyndp/gep",
+  "gridmod/rts",                                          # 4  large-scale   (last)
+]
 master_seed = 382507
-n_seeds     = 10
-
+n_seeds     = 5
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"
