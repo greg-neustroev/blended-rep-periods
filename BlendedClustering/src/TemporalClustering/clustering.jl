@@ -561,6 +561,24 @@ function select_representatives(
     rp_matrix = matrix[:, hull_indices]
     assignments = [argmin([norm(matrix[:, h] - matrix[:, p]) for h ∈ hull_indices]) for p ∈ 1:n_periods]
     selected_indices = hull_indices
+  elseif method ≡ :chronological
+    # Sequential linked time-period blocks: partition the base periods into `n_rp`
+    # contiguous, (near-)equal-length segments in chronological order; each segment's
+    # representative is its medoid (the member nearest the rest, like k-medoids), and
+    # every period is assigned to its own segment. An order-preserving, non-clustering
+    # baseline (no feature-space grouping — grouping is by time alone).
+    n_cols = size(matrix, 2)
+    distance_matrix = pairwise(Euclidean(), matrix; dims=2)
+    edges = round.(Int, range(0, n_cols; length=n_rp + 1))
+    assignments = Vector{Int}(undef, n_cols)
+    medoids = Vector{Int}(undef, n_rp)
+    for k ∈ 1:n_rp
+      members = (edges[k]+1):edges[k+1]
+      assignments[members] .= k
+      medoids[k] = members[argmin([sum(@view distance_matrix[m, members]) for m ∈ members])]
+    end
+    rp_matrix = matrix[:, medoids]
+    selected_indices = medoids
   else
     throw(ArgumentError("Clustering method is not supported"))
   end
@@ -706,8 +724,8 @@ Finds representative periods via data clustering. All distances are Euclidean.
     is done for `n_rp - 1` periods, and the last period is added as a special
     shorter representative period
   - `method`: clustering method to use; one of `:k_means`, `:k_medoids`,
-    `:hierarchical`, `:convex_hull`, `:convex_hull_with_null`, `:conical_hull`
-    (selection is chosen independently of the weight class)
+    `:hierarchical`, `:chronological`, `:convex_hull`, `:convex_hull_with_null`,
+    `:conical_hull` (selection is chosen independently of the weight class)
   - `tol`: the projected gradient descent tolerance `ε` used by the hull methods
     to rank candidate periods by their distance to the current hull (ignored by
     `:k_means`/`:k_medoids`).
@@ -1017,7 +1035,8 @@ function single_period_clustering_result(connection)
 end
 
 function clustering_type_to_method(clustering_type)
-    supported = (:k_means, :k_medoids, :hierarchical, :convex_hull, :convex_hull_with_null, :conical_hull)
+    supported = (:k_means, :k_medoids, :hierarchical, :chronological,
+        :convex_hull, :convex_hull_with_null, :conical_hull)
     clustering_type ∈ supported || throw(ArgumentError(
         "Unsupported clustering_type $(clustering_type); expected one of $(supported). " *
         "Selection is now specified independently of the weight class: name :convex_hull " *

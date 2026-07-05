@@ -93,8 +93,8 @@ conic hull in Step 1, which is why economic + conic works as a pair.
 
 ## 4. Step 1 — Selection (which days are representatives)
 
-**Options:** `k_means` · `k_medoids` · `hierarchical` (traditional baselines) ·
-`convex_hull` · `convex_hull_with_null` · **`conical_hull`** (proposed).
+**Options:** `k_means` · `k_medoids` · `hierarchical` · `chronological` (traditional
+baselines) · `convex_hull` · `convex_hull_with_null` · **`conical_hull`** (proposed).
 
 Selection is now specified **independently of the weight class** — the historical `:hull`
 alias, whose hull geometry was silently inferred from the weight type, has been removed. You
@@ -105,6 +105,9 @@ weights).
 * **k-means** — synthetic centroids; the classic RP method. Not real days.
 * **k-medoids / hierarchical (Ward)** — cluster on Euclidean distance; each cluster's
   representative is its medoid (a real day). The standard "traditional clustering" baselines.
+* **chronological** — partition the year into `n_rp` contiguous, equal-length time blocks
+  and take each block's medoid. An order-preserving "sequential linked periods" baseline
+  that groups by time rather than feature similarity.
 * **convex / conical hull** — greedy: repeatedly add the day furthest (in projection residual)
   from the current hull. The convex hull captures interior-spanning extremes; the **conical
   hull** anchors at the origin and captures extreme *rays* — the days that load a constraint

@@ -82,12 +82,24 @@ end
 
   @testset "find_representative_periods: every method" begin
     df = synthetic_clustering_df(seed=3)
-    for m in (:k_means, :k_medoids, :hierarchical, :convex_hull, :convex_hull_with_null, :conical_hull)
+    for m in (:k_means, :k_medoids, :hierarchical, :chronological,
+              :convex_hull, :convex_hull_with_null, :conical_hull)
       res = find_representative_periods(df, 3; method=m)
       @test size(res.rp_matrix, 2) == 3
       @test size(res.weight_matrix, 2) == 3
       @test size(res.clustering_matrix, 2) == 12   # one column per base period
     end
+  end
+
+  @testset "chronological selection: contiguous blocks in time order" begin
+    df = synthetic_clustering_df(n_periods=12, seed=8)
+    res = find_representative_periods(df, 4; method=:chronological)
+    @test size(res.rp_matrix, 2) == 4
+    a = res.diagnostics[:assignments]
+    @test length(a) == 12
+    @test sort(unique(a)) == 1:4          # every block used
+    @test issorted(a)                     # blocks are contiguous and in chronological order
+    @test issorted(res.diagnostics[:selected_indices])  # one medoid per block, in time order
   end
 
   @testset "fit_rep_period_weights!: weight-class structure" begin
