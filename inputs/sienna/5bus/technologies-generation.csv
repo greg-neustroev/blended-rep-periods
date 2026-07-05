@@ -1,10 +1,10 @@
 id,variable_cost,ramping_rate
-Solitude,30.0,1.0
-Park City,15.0,1.0
-Alta,14.0,1.0
-Brighton,10.0,1.0
-Sundance,40.0,1.0
+Solitude,0.03,1.0
+Park City,0.015,1.0
+Alta,0.014,1.0
+Brighton,0.01,1.0
+Sundance,0.04,1.0
 HydroDispatch2,0.0,1.0
 SolarBusC,0.0,1.0
 WindBusA,0.0,1.0
-ENS,10000.0,1.0
+ENS,10.0,1.0

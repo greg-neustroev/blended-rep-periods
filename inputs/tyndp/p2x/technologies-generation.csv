@@ -1,5 +1,5 @@
 id,variable_cost,ramping_rate
-ENS,1.0,1
+ENS,10.0,1
 Wind_Onshore,0.0,1
 Wind_Offshore,0.0,1
 Coal,0.051,1

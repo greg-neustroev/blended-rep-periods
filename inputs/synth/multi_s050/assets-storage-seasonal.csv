@@ -1,9 +1,9 @@
 id,initial_storage_level,peak_inflow,spillage_cost,borrow_cost,can_charge
-Hydro1,2500.0,20.82975,0.0,10000.0,false
-Hydro2,2500.0,20.38898,0.0,10000.0,false
-Hydro3,2500.0,19.12883,0.0,10000.0,false
-Hydro4,2500.0,20.38898,0.0,10000.0,false
-Hydro5,2500.0,20.82975,0.0,10000.0,false
-Hydro6,2500.0,20.38898,0.0,10000.0,false
-Hydro7,2500.0,19.12883,0.0,10000.0,false
-Hydro8,2500.0,20.38898,0.0,10000.0,false
+Hydro1,2500.0,20.82975,0.0,10.0,false
+Hydro2,2500.0,20.38898,0.0,10.0,false
+Hydro3,2500.0,19.12883,0.0,10.0,false
+Hydro4,2500.0,20.38898,0.0,10.0,false
+Hydro5,2500.0,20.82975,0.0,10.0,false
+Hydro6,2500.0,20.38898,0.0,10.0,false
+Hydro7,2500.0,19.12883,0.0,10.0,false
+Hydro8,2500.0,20.38898,0.0,10.0,false
