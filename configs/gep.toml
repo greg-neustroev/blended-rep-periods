@@ -1,10 +1,10 @@
-# GEP (investment) — held-out comparison (Study 3), run individually.
-# Traditional baselines (k-means/k-medoids/hierarchical/chronological, dirac) vs the PROPOSED
-# method, n_rp ∈ {5,10,20,40,80}. Also part of configs/comparison.toml. Investment regime:
-# regret fixes invested_units and re-optimizes operations. Only k-means is seed-sensitive.
+# GEP (investment) — held-out comparison, run individually. Full clustering × weight matrix
+# (6 × 4 = 24 combos) at the economic normalization, n_rp ∈ {5,10,20,40,80}; also part of
+# configs/comparison.toml. Investment regret fixes invested_units and re-optimizes operations
+# (no storage chain). Only k-means is seed-sensitive.
 inputs = ["tyndp/gep"]
 master_seed = 382507
-n_seeds     = 5
+n_seeds     = 3
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

@@ -1,10 +1,11 @@
-# Sienna 118-bus (storage, larger non-TYNDP network) — held-out comparison (Study 3), run
-# individually. Traditional baselines vs the PROPOSED method, n_rp ∈ {5,10,20,40,80}. Also
-# part of configs/comparison.toml. Its ~300 generators make the clustering matrix tall, so
-# its runtime breakdown is the most informative among the 365-period systems.
+# Sienna 118-bus (storage, larger non-TYNDP network) — held-out comparison, run individually.
+# Full clustering × weight matrix (24 combos) at economic, n_rp ∈ {5,10,20,40,80}; also part
+# of comparison.toml. storage_regret day-exact (fix_every=1), convex chain on real-period
+# methods. Its ~300 generators make the clustering matrix tall, so its runtime breakdown is
+# the most informative among the 365-period systems. Only k-means is seed-sensitive.
 inputs = ["sienna/118bus"]
 master_seed = 382507
-n_seeds     = 5
+n_seeds     = 3
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

@@ -1,14 +1,15 @@
-# 5bus — DEVELOPMENT system (Studies 1–2): sensitivity + ablation. HELD OUT of the comparison.
+# 5bus — DEVELOPMENT system (sensitivity + ablation). HELD OUT of the comparison, so the
+# method and its hyperparameters are never tuned on the test data.
 #
 # Both sweeps write to the sienna/5bus namespace:
-#   - inputs/sienna/sens_5bus.csv : sensitivity — every clustering type × normalization × tol
-#     at n_rp=10 (convex weights, chain off) + greedy-hull cache validation. This is where the
-#     method and its hyperparameters are chosen, and where per-method hyperparameter robustness
-#     is measured (we do not presuppose conical-hull + convex is best).
+#   - inputs/sienna/sens_5bus.csv : sensitivity — every clustering type × weight type ×
+#     normalization × PGD tolerance at n_rp=10 (day-exact fix_every=1, chain on for the
+#     real-period methods, off for k-means). We presuppose neither the selection method nor
+#     the weight type; this picks them and measures per-(clustering×weight) hyperparameter
+#     robustness. α is fixed at 1/L and N is not imposed (realized N(ε) reported); a
+#     cache-on/off pair validates the greedy-hull cache.
 #   - inputs/sienna/5bus.csv      : ablation — PROPOSED vs each single-component knockout
-#     (−economic, −conic-selection, −convex-weights, −chain-split), over n_rp ∈ {5,10,20,40,80}.
-# The method + hyperparameters fixed here carry over unchanged to the held-out comparison, so
-# method selection is never informed by the test systems.
+#     (−economic, −conic-selection, −convex-weights, −chain-split), n_rp ∈ {5,10,20,40,80}.
 #
 # Only k-means is seed-sensitive (the rest are deterministic); n_seeds = 3, 5bus is cheap.
 inputs = [

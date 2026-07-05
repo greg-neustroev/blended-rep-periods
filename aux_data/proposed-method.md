@@ -219,27 +219,32 @@ Retained as available (non-proposed) options for comparison: the sub-unit-conic 
 
 ## 9. Experiment design (held-out methodology)
 
-Datasets play distinct roles so the method is never tuned on the systems it is judged on.
-Each study is a curated sweep CSV (`inputs/…`) + config TOML (`configs/…`); regret is
+Datasets play distinct roles so the method is never tuned on the systems it is judged on. We
+presuppose **neither the selection method nor the weight type** — both are free axes. Regret is
 `evaluated_objective_value / reference_optimum − 1` (reference = the `n_rep=1` full-horizon
-solve). RP grids cap at 80 for the ~365-period systems; RTS scales higher.
+solve). Storage is graded **day-exact** (`fix_every=1`): the convex chain reconstructs every
+seasonal boundary, so day-exact is the honest "reconstruct as best as possible" test — the
+chain needs base-period anchors, so every real-period method carries it (chain = convex) while
+k-means is the no-chain baseline. RP grids cap at 80 for the ~365-period systems; RTS scales
+higher.
 
 * **5bus — development system** (`configs/5bus.toml`):
-  - **Sensitivity** — *every* clustering type × normalisation × PGD tolerance
-    (`{1e-2,1e-3,1e-4,1e-5}`) at n_rp=10, convex weights, chain off. The selection method and
-    its hyperparameters are chosen here, and per-method hyperparameter robustness is measured
-    (we do not presuppose conic+convex wins). α is fixed at 1/L (Lipschitz-optimal) and the
-    iteration count is not imposed — the realised N(ε) is reported; a cache-on/off pair
-    validates the greedy-hull cache.
+  - **Sensitivity** — *every* clustering type × *weight type* × normalisation × PGD tolerance
+    (`{1e-2,1e-3,1e-4,1e-5}`) at n_rp=10. The selection method, weight type, normalisation and
+    tolerance are chosen here, and per-(clustering×weight) hyperparameter robustness is measured
+    (we do not presuppose conic+convex wins — a method that is more hyperparameter-robust could
+    be preferable). α is fixed at 1/L (Lipschitz-optimal) and the iteration count is not imposed
+    — the realised N(ε) is reported; a cache-on/off pair validates the greedy-hull cache.
   - **Ablation** — proposed vs each single-component knockout (−economic, −conic-selection,
     −convex-weights, −chain-split) across n_rp ∈ {5,10,20,40,80}.
-* **GEP, P2X, 118-bus — held-out test systems** (`configs/comparison.toml`): the method +
-  hyperparameters fixed on 5bus, compared against traditional k-means / k-medoids /
-  hierarchical / chronological (dirac, unscaled) across the RP grid. No sensitivity or
-  ablation here — no tuning on the test systems.
+* **GEP, P2X, 118-bus — held-out test systems** (`configs/comparison.toml`): the full
+  clustering × weight matrix (6 × 4 = 24 combinations) at the economic normalisation and the
+  tolerance fixed on 5bus, across the RP grid — the generalisation test on systems the method
+  was never tuned on. No sensitivity or ablation here.
 * **RTS-GMLC — large-scale / scaling** (`configs/rts.toml`, run last): 5-minute data with
-  6-hour periods (1464 base periods), where RP scales into the hundreds ({160,320,500}) for
-  the runtime / weight-fit-bottleneck curve.
+  6-hour periods (1464 base periods). Too large for the full weight matrix, so a reduced
+  comparison (traditional dirac baselines vs proposed) + a proposed-only extension into the
+  hundreds of RPs ({160,320,500}) for the runtime / weight-fit-bottleneck curve.
 
 Reported metrics (all from recorded columns, or the invested-units dumps): regret with seed
 variance, cost breakdown, curtailment & feasibility (borrow, weight-sum > 1), capacity-decision

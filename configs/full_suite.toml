@@ -1,22 +1,23 @@
 # Full revision campaign, cheap → expensive. Held-out methodology:
-#   Studies 1–2  sensitivity + ablation on 5bus (development system)
-#   Study 3      comparison on GEP / P2X / 118-bus (held out — no tuning on them)
-#   Study 4      large-scale / RP-scaling on RTS (last)
+#   development (5bus): sensitivity (clustering × weight × normalization × tol) + ablation
+#   held-out comparison (GEP / P2X / 118-bus): full clustering × weight matrix at economic
+#   large-scale (RTS, last): reduced comparison + RP scaling into the hundreds
 #
-# All arms dedup by name across sweeps (resume-safe), so running this after the individual
-# configs re-solves nothing. Only k-means is seed-sensitive; n_seeds = 5 gives its variance
-# bars — drop to 1 for a quick first pass. Under time pressure, stop before RTS: everything
-# earlier is independently useful.
+# We presuppose neither the selection method nor the weight type; storage is graded day-exact
+# (fix_every=1) with the convex chain on every real-period method. All arms dedup by name
+# (resume-safe). Only k-means is seed-sensitive; the comparison is 120 arms/dataset, so a first
+# pass with n_seeds=1 is cheap and only k-means loses its variance bars. Stop before RTS if
+# time is short — everything earlier is independently useful.
 inputs = [
-  { sweep = "sienna/sens_5bus", data = "sienna/5bus" },  # 1  sensitivity   (5bus, dev)
-  "sienna/5bus",                                          # 2  ablation      (5bus, dev)
-  "sienna/118bus",                                        # 3  comparison    (held out)
+  { sweep = "sienna/sens_5bus", data = "sienna/5bus" },  # sensitivity   (5bus, dev)
+  "sienna/5bus",                                          # ablation      (5bus, dev)
+  "sienna/118bus",                                        # comparison    (held out)
   "tyndp/p2x",
   "tyndp/gep",
-  "gridmod/rts",                                          # 4  large-scale   (last)
+  "gridmod/rts",                                          # large-scale   (last)
 ]
 master_seed = 382507
-n_seeds     = 5
+n_seeds     = 3
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"
