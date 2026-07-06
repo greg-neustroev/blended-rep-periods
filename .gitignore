@@ -40,3 +40,6 @@ outputs/tyndp/gep_*
 outputs/tyndp/p2x_*
 plots
 aux_data
+# Python bytecode
+__pycache__/
+*.pyc
