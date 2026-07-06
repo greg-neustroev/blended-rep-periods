@@ -1,0 +1,4 @@
+id,is_seasonal,efficiency_in,efficiency_out
+Hydro1,true,1.0,1.0
+Hydro2,true,1.0,1.0
+Hydro3,true,1.0,1.0

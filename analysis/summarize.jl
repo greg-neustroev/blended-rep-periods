@@ -22,7 +22,7 @@
 using CSV, DataFrames, Printf, Statistics
 using Arrow
 
-const METHOD_ORDER = ["k_means", "k_medoids", "hierarchical", "chronological", "convex_hull", "conical_hull"]
+const METHOD_ORDER = ["k_means", "k_medoids", "hierarchical", "chronological", "convex_hull", "convex_hull_with_null", "conical_hull"]
 const WEIGHT_ORDER = ["dirac", "convex", "conical", "conical_bounded"]
 const PROPOSED = ("conical_hull", "convex")   # marked with * in the tables
 

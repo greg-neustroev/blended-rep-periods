@@ -1,0 +1,30 @@
+# synth/hydro — DEVELOPMENT system (sensitivity + ablation). A purpose-built synthetic
+# network, HELD OUT of the comparison so the method and its hyperparameters are never tuned on
+# the test data. Replaces 5bus as the dev system: 5bus post-injection is run-of-river and
+# insensitive to everything, whereas synth/hydro has large seasonal reservoirs (β ≫ horizon,
+# holding ~half their annual inflow) that BIND, cheap hydro+solar carrying most of demand with
+# a costly gas backstop, and seasonal×diurnal demand vs anti-phase solar — so the reduced
+# solution's reconstructed seasonal-storage trajectory drives deployed cost and the clustering ×
+# weight × normalization × tol choices actually move the regret. Small (1 node, ~6 assets,
+# 120 days × 24 h = 2880 steps) so the full sensitivity sweep runs fast. Regenerate with
+# `python3 aux_data/gen_synth_sensitivity.py`.
+#
+# Two sweeps write to the synth/hydro namespace:
+#   - inputs/synth/sens_hydro.csv : sensitivity — every clustering type (incl. the dominated
+#     convex_hull_with_null, kept here to demonstrate it is dominated) × weight type ×
+#     normalization × PGD tolerance at n_rp=10 (day-exact fix_every=1, exact-inflow injection
+#     on). Picks the selection/weight and measures per-(clustering×weight) hyperparameter
+#     robustness.
+#   - inputs/synth/hydro.csv      : ablation — PROPOSED vs each single-component knockout
+#     (−economic, −conic-selection, −convex-weights), n_rp ∈ {5,10,20,40}.
+#
+# Only k-means/k-medoids are seed-sensitive (the rest are deterministic).
+inputs = [
+  { sweep = "synth/sens_hydro", data = "synth/hydro" },
+  "synth/hydro",
+]
+master_seed = 382507
+n_seeds     = 10
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

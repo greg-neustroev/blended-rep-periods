@@ -1,0 +1,3 @@
+id,variable_cost,ramping_rate
+Solar,0.0,1.0
+Gas,30.0,1.0

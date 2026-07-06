@@ -1,0 +1,6 @@
+asset,profile_type,profile
+Load,demand,Load_demand
+Solar,availability,Solar_avail
+Hydro1,inflows,Hydro1_inflow
+Hydro2,inflows,Hydro2_inflow
+Hydro3,inflows,Hydro3_inflow

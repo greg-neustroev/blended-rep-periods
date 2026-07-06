@@ -1,0 +1,6 @@
+id,type,carrier_out
+Hydro1,storage,electricity
+Hydro2,storage,electricity
+Hydro3,storage,electricity
+Solar,generation,electricity
+Gas,generation,electricity

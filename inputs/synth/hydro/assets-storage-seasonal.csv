@@ -1,0 +1,4 @@
+id,initial_storage_level,peak_inflow,spillage_cost,borrow_cost,can_charge
+Hydro1,7335.62498,41.92738,0.0,10000.0,false
+Hydro2,7335.62498,41.92738,0.0,10000.0,false
+Hydro3,7335.62498,41.92738,0.0,10000.0,false
