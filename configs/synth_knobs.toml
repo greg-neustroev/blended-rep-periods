@@ -33,7 +33,7 @@ inputs = [
   { sweep = "synth/knobs/panel", data = "synth/knobs/sd30" },
 ]
 master_seed = 382507
-n_seeds     = 1          # bump for k-means/k-medoids variance bars
+n_seeds     = 5          # deterministic methods repeat; k-means/medoids get variance bars
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

@@ -28,8 +28,10 @@
 #   scale_ratio    relative *variability* of the inflow feature block vs demand/solar. Makes the
 #                  clustering-feature scales heterogeneous across blocks ⇒ NORMALIZATION (economic
 #                  vs unscaled vs minmax) starts to matter; 1.0 ⇒ homogeneous ⇒ normalization moot.
-#   noise          per-(day,h) multiplicative noise on demand/solar. Robustness knob — expect the
-#                  method *ranking* to be insensitive while the regret floor rises.
+#   noise          per-(day,h) multiplicative irregularity on demand/solar. Empirically a SECOND
+#                  out-of-hull stressor (erratic days push the residual-load cloud out of hull ⇒
+#                  weight/reconstruction sensitivity), NOT a clean robustness dial — the robustness
+#                  side of the story is read from the axes that stay flat + the per-seed variance.
 #   season_diurnal seasonal:diurnal amplitude ratio. Shifts stress between the inter-period storage
 #                  chain (seasonal) and intra-period dispatch (diurnal).
 import os, math, random
@@ -94,18 +96,17 @@ def gen(outdir, *, beta_days=60.0, gas_cost=30.0, renew_share=0.95, hull_spread=
     dpk = max(max(r) for r in dem)
     spk = max(max(r) for r in sol) or 1.0
     ipk = [max(inf[k]) for k in range(K)]
-    # scale_ratio inflates the inflow feature block's amplitude relative to its mean (only the
-    # profile *shape* the clustering sees; peak_inflow below rescales energy back, so the physics
-    # is unchanged and only the clustering-feature scale — hence normalization — is affected).
-    inf_amp = [[1.0 + scale_ratio * (inf[k][day] / ipk[k] - sum(inf[k]) / (D * ipk[k]))
-                for day in range(D)] for k in range(K)]
-    iamp_pk = [max(1e-9, max(inf_amp[k])) for k in range(K)]
-
+    shape = [[inf[k][day] / ipk[k] for day in range(D)] for k in range(K)]   # inflow shape, peak 1
+    # scale_ratio sets the inflow feature's raw magnitude (peak = scale_ratio) as the CLUSTERING
+    # sees it: demand/solar features are peak 1, inflow is peak scale_ratio. peak_inflow below
+    # rescales the energy back, so scale_ratio changes ONLY the cross-block feature scale — which
+    # `unscaled` clustering is dominated by while `economic`/`minmax` are not — and never the
+    # physics. scale_ratio=1 ⇒ homogeneous (normalization moot); large ⇒ normalization bites.
     cols = ["Load_demand", "Solar_avail"] + [f"Hydro{k+1}_inflow" for k in range(K)]
     lines = ["timestep," + ",".join(cols)]
     for day in range(D):
         for h in range(H):
-            row = [dem[day][h] / dpk, sol[day][h] / spk] + [inf_amp[k][day] / iamp_pk[k] for k in range(K)]
+            row = [dem[day][h] / dpk, sol[day][h] / spk] + [scale_ratio * shape[k][day] for k in range(K)]
             lines.append(f"{day*H+h+1}," + ",".join(f"{v:.5f}" for v in row))
     W("profiles.csv", "\n".join(lines) + "\n")
     W("scalars.csv", "scalar,value\noperations_weight,1.0\ntimestep_duration,1.0\n")
@@ -116,9 +117,10 @@ def gen(outdir, *, beta_days=60.0, gas_cost=30.0, renew_share=0.95, hull_spread=
     ann_sol = sum(sum(r) for r in sol) / spk
     SOLAR_CAP = solar_share * ann_dem / max(ann_sol, 1e-9)
     E_res = hydro_share * ann_dem / K                              # annual inflow per reservoir
-    # peak_inflow_k rescales the (amplitude-modulated) inflow *shape* back to energy E_res.
-    ann_iamp = [sum(inf_amp[k]) * H / iamp_pk[k] for k in range(K)]  # ×H: flat within day
-    peak_inflow = [E_res / max(a, 1e-9) for a in ann_iamp]
+    # peak_inflow_k rescales the inflow *shape* (× scale_ratio in the profile) back to energy E_res,
+    # so the physical inflow is E_res independent of scale_ratio.
+    ann_shape = [sum(shape[k]) * H for k in range(K)]              # ×H: flat within day
+    peak_inflow = [E_res / (scale_ratio * max(a, 1e-9)) for a in ann_shape]
     RES_CAP = [beta_days * (E_res / D) for _ in range(K)]           # β days of mean daily inflow
 
     assets = "id,location,technology,unit_capacity,initial_units\n"
@@ -168,9 +170,9 @@ def write_full_sweeps(base):
                 for t in tols[w]:
                     sens.append(f"10,{H},{cl},{w},{t},storage_regret,{nrm},1\n")
     open(f"inputs/synth/sens_{base}.csv", "w").write("".join(sens))
-    # Ablation: PROPOSED vs single-component knockouts over an n_rp grid (D=120 ⇒ up to 40).
+    # Ablation: PROPOSED vs single-component knockouts over the n_rp grid {10,20,40,80}.
     abl = [_HDR, f"1,{D*H},k_means,dirac,0.01,none,economic,1\n"]
-    for n in [5, 10, 20, 40]:
+    for n in [10, 20, 40, 80]:
         abl.append(f"{n},{H},conical_hull,convex,0.01,storage_regret,economic,1\n")   # PROPOSED
         abl.append(f"{n},{H},conical_hull,convex,0.01,storage_regret,unscaled,1\n")   # -economic
         abl.append(f"{n},{H},convex_hull,convex,0.01,storage_regret,economic,1\n")    # -conic-selection
@@ -211,7 +213,7 @@ STUDY = [
     ("reg3", dict(n_regimes=3)), ("reg6", dict(n_regimes=6)), ("reg12", dict(n_regimes=12)), ("reg30", dict(n_regimes=30)),
     # cross-block feature scale → NORMALIZATION (economic vs unscaled vs minmax).
     ("scale05", dict(scale_ratio=0.5)), ("scale2", dict(scale_ratio=2.0)), ("scale4", dict(scale_ratio=4.0)),
-    # noise → ROBUSTNESS (expect the ranking to be insensitive, the regret floor to rise).
+    # noise → day-shape irregularity: empirically a second out-of-hull / reconstruction stressor.
     ("noise10", dict(noise=0.1)), ("noise30", dict(noise=0.3)), ("noise60", dict(noise=0.6)),
     # seasonal:diurnal amplitude → inter- vs intra-period stress.
     ("sd03", dict(season_diurnal=0.3)), ("sd30", dict(season_diurnal=3.0)),
@@ -239,7 +241,7 @@ def write_study():
                    for name, _ in STUDY)
     tail = (']\n'
             'master_seed = 382507\n'
-            'n_seeds     = 1          # bump for k-means/k-medoids variance bars\n'
+            'n_seeds     = 5          # deterministic methods repeat; k-means/medoids get variance bars\n'
             'solver      = "gurobi"\n'
             'inputs_dir  = "../inputs"\n'
             'outputs_dir = "../outputs"\n')

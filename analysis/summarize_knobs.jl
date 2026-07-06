@@ -28,7 +28,7 @@ const GROUPS = [
     ("hull",  "residual-load hull geometry",      "→ WEIGHT class (convex vs conical vs bounded)"),
     ("reg",   "intrinsic dimensionality",         "→ SELECTION and n_rp"),
     ("scale", "cross-block feature scale",        "→ NORMALIZATION"),
-    ("noise", "day-to-day noise",                 "→ ROBUSTNESS (expect axes flat)"),
+    ("noise", "day-to-day irregularity (noise)",  "→ out-of-hull / reconstruction stress (not a clean robustness dial)"),
     ("sd",    "seasonal:diurnal amplitude",       "→ inter- vs intra-period stress"),
 ]
 

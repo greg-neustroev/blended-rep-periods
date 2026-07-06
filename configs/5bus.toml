@@ -1,12 +1,9 @@
 # Sienna 5-bus — held-out comparison (small illustrative storage network). Full clustering ×
-# weight matrix (24 combos) at economic, n_rp ∈ {5,10,20,40,80}; also part of comparison.toml.
-# storage_regret day-exact (fix_every=1), exact-inflow injection on by default. Formerly the
-# development system, but post-injection its run-of-river storage (β≈1.5–5.8 days) is
-# insensitive to the method choices, so sensitivity/ablation moved to the synthetic dev system
-# (synth/hydro, see synth.toml). Only k-means is seed-sensitive.
+# weight matrix (28 combos) at economic, n_rp ∈ {10,20,40,80}; also part of comparison.toml.
+# storage_regret day-exact.
 inputs = ["sienna/5bus"]
 master_seed = 382507
-n_seeds     = 10
+n_seeds     = 5
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

@@ -1,14 +1,13 @@
 # RTS-GMLC — large-scale / RP-scaling case, RUN LAST. 5-minute data with 6-hour periods
 # (72-step, 1464 base periods, 105408-step year), so it scales RP into the hundreds. Too large
-# for the full weight × clustering matrix, so it runs a REDUCED comparison — the traditional
-# dirac baselines (k-means/k-medoids/hierarchical/chronological) vs the PROPOSED conical-hull +
-# convex — at n_rp ∈ {5,10,20,40,80}, plus a PROPOSED-only extension at {160,320,500} for the
-# runtime / weight-fit-bottleneck curve. economic normalization; storage day-exact (fix_every=1),
-# convex chain on the real-period methods. Every solve is heavy: run only after the other
-# studies, and trim {320,500} if time is short. Only k-means is seed-sensitive.
+# for the full weight × clustering matrix, so it runs a REDUCED comparison — six arms: the four
+# dirac baselines (k_means/k_medoids/hierarchical/chronological) plus convex_hull+convex and
+# conical_hull+conical — each at n_rp ∈ {20,40,80,160,320}. economic normalization; storage
+# day-exact. Every solve is heavy: run only after the
+# other studies, and trim {160,320} if time is short. Only k-means/k-medoids are seed-sensitive.
 inputs = ["gridmod/rts"]
 master_seed = 382507
-n_seeds     = 10
+n_seeds     = 5
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

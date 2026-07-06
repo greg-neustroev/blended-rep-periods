@@ -12,11 +12,10 @@
 # Two sweeps write to the synth/hydro namespace:
 #   - inputs/synth/sens_hydro.csv : sensitivity — every clustering type (incl. the dominated
 #     convex_hull_with_null, kept here to demonstrate it is dominated) × weight type ×
-#     normalization × PGD tolerance at n_rp=10 (day-exact fix_every=1, exact-inflow injection
-#     on). Picks the selection/weight and measures per-(clustering×weight) hyperparameter
-#     robustness.
+#     normalization × PGD tolerance at n_rp=10 (day-exact). Picks the selection/weight and
+#     measures per-(clustering×weight) hyperparameter robustness.
 #   - inputs/synth/hydro.csv      : ablation — PROPOSED vs each single-component knockout
-#     (−economic, −conic-selection, −convex-weights), n_rp ∈ {5,10,20,40}.
+#     (−economic, −conic-selection, −convex-weights), n_rp ∈ {10,20,40,80}.
 #
 # Only k-means/k-medoids are seed-sensitive (the rest are deterministic).
 inputs = [
@@ -24,7 +23,7 @@ inputs = [
   "synth/hydro",
 ]
 master_seed = 382507
-n_seeds     = 10
+n_seeds     = 5
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

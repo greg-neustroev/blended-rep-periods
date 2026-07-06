@@ -1,10 +1,10 @@
 # GEP (investment) — held-out comparison, run individually. Full clustering × weight matrix
-# (6 × 4 = 24 combos) at the economic normalization, n_rp ∈ {5,10,20,40,80}; also part of
+# (7 × 4 = 28 combos, incl. convex_hull_with_null) at economic, n_rp ∈ {10,20,40,80}; also part of
 # configs/comparison.toml. Investment regret fixes invested_units and re-optimizes operations
-# (no storage chain). Only k-means is seed-sensitive.
+# (no storage chain). Only k-means/k-medoids are seed-sensitive.
 inputs = ["tyndp/gep"]
 master_seed = 382507
-n_seeds     = 10
+n_seeds     = 5
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"
