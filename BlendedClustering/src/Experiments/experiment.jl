@@ -52,8 +52,7 @@ function run_experiment(
     # Create model
     @info styled"{bold:Creating the model}"
 
-    time_to_formulate_model = @elapsed create_optimization_model!(connection, model, clustering_result;
-                                                                  inject_inflow=experiment_data.inject_inflow)
+    time_to_formulate_model = @elapsed create_optimization_model!(connection, model, clustering_result)
 
     # Solve
     @info styled"{bold:Solving the model}"
@@ -65,8 +64,7 @@ function run_experiment(
         # decision variables fixed to the values from the clustering model
         # to get the true objective value.
         @info styled"{bold:Evaluating the model}"
-        evaluate_solution!(connection, model, eval_model, period_length, evaluation_type;
-                           fix_every=experiment_data.fix_every)
+        evaluate_solution!(connection, model, eval_model, period_length, evaluation_type)
     else
         JuMP.compute_conflict!(model)
         iis_model, _ = JuMP.copy_conflict(model)

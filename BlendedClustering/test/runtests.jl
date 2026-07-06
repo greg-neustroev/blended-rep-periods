@@ -188,29 +188,6 @@ end
     end
   end
 
-  @testset "experiment config schema: fix_every default 1 / suffixes name" begin
-    mktempdir() do dir
-      # Absent column -> default cadence, name unchanged.
-      path = joinpath(dir, "run.csv")
-      open(path, "w") do io
-        println(io, "n_rep_periods,period_length,clustering_type,weight_type,evaluation_type")
-        println(io, "5,24,hull,convex,storage_regret")
-      end
-      ed = ExperimentData(first(eachrow(read_run_data(path))), "gep")
-      @test ed.fix_every == BC.DEFAULT_FIX_EVERY
-      @test ed.name == "gep_5_24_hull_convex_$(BC.DEFAULT_PGD_TOL)"
-      # Explicit coarser cadence -> field set and name carries the suffix.
-      path2 = joinpath(dir, "run2.csv")
-      open(path2, "w") do io
-        println(io, "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,fix_every")
-        println(io, "5,24,hull,convex,0.01,storage_regret,7")
-      end
-      ed2 = ExperimentData(first(eachrow(read_run_data(path2))), "gep")
-      @test ed2.fix_every == 7
-      @test ed2.name == "gep_5_24_hull_convex_0.01_fixevery7"
-    end
-  end
-
   @testset "resolve_input + cross-sweep experiment identity" begin
     ri = BC.Experiments.resolve_input
     @test ri("tyndp/gep") == ("tyndp/gep", "tyndp/gep")

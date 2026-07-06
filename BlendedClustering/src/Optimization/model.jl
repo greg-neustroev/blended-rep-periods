@@ -7,16 +7,17 @@ reachable through `connection` and the representative-period weights in
 family in place, and returns a dictionary of per-block formulation timings (in
 seconds), including the `"duckdb_queries"` total spent querying DuckDB.
 
-With `inject_inflow = true` the inter-period storage chain reconstructs each base
-period's seasonal increment from only the *dispatch response* of the representatives
-(the net increment minus each RP's exogenous inflow) and adds the base period's own
-*real* inflow exactly, instead of blending the whole increment (inflow included). This
-is a right-hand-side data edit of the `storage_inter` constraints — no extra variables
-or rows — that removes the integrated inflow-approximation drift and restores the true
-annual water balance; the absolute-level reconstruction clause is dropped with it (the
-chain becomes increment-only, exactly as under the chain split).
+The inter-period storage chain uses exact-inflow injection (for any genuine multi-period
+reduction): it reconstructs each base period's seasonal increment from only the *dispatch
+response* of the representatives (the net increment minus each RP's exogenous inflow) and
+adds the base period's own *real* inflow exactly, closing the per-base-day ledger with
+conservation slacks and enforcing the seasonal band as a hard [min,max]·cap constraint.
+This removes the integrated inflow-approximation drift and restores the true annual water
+balance; the absolute-level reconstruction clause is unnecessary and dropped. A single base
+period (the n_rep=1 reference / full-horizon evaluation) has no chain to reconstruct, so
+injection is inert there and the model reduces to the plain formulation.
 """
-function create_optimization_model!(connection, model, clustering_result; inject_inflow::Bool=false)
+function create_optimization_model!(connection, model, clustering_result)
     # By default JuMP builds a String name for every variable and constraint
     # (e.g. "power_out[asset,1,4567]"); on the full-horizon models that is
     # millions of string interpolations and allocations, and they dominate the
@@ -76,9 +77,9 @@ function create_optimization_model!(connection, model, clustering_result; inject
         # a chain of base periods is rebuilt from fewer representatives. A single base period
         # (the n_rp=1 reference optimum and the full-horizon evaluation model) has no chain to
         # reconstruct, so injection there would only let its conservation slacks perturb the
-        # annual balance. Disable it in that case so those models stay identical to the
-        # historical formulation and the regret denominator is unchanged.
-        inject_inflow = inject_inflow && length(D) > 1
+        # annual balance. It is therefore active only for a genuine reduction, so those models
+        # stay the plain formulation and the regret denominator is unchanged.
+        inject = length(D) > 1
     end
 
     @timed_step timings "variables" "Creating variables" begin
@@ -110,7 +111,7 @@ function create_optimization_model!(connection, model, clustering_result; inject
         # the reconstructed trajectory ratchet out of the reservoir. Priced at the asset's own
         # spillage/borrow cost (the full-model prices), so the regime is arbitrated by price,
         # not a classifier: a seasonal reservoir with a large buffer leaves them at zero.
-        if inject_inflow
+        if inject
             @variable(model, soc_chain_spill[S_seas, D] ≥ 0)
             @variable(model, soc_chain_borrow[S_seas, D] ≥ 0)
         end
@@ -200,7 +201,7 @@ function create_optimization_model!(connection, model, clustering_result; inject
         # ledger can be reported separately from the intra-period physics.
         @expression(model, cost_of_chain_spill, AffExpr(0.0))
         @expression(model, cost_of_chain_borrow, AffExpr(0.0))
-        if inject_inflow
+        if inject
             spill_price = Dict(string(r.id) => r.spillage_cost
                                for r in rows(run_query("SELECT id, spillage_cost FROM spillage_cost_objective_view")))
             borrow_price = Dict(string(r.id) => r.borrow_cost
@@ -399,7 +400,7 @@ function create_optimization_model!(connection, model, clustering_result; inject
         # whole increment, reproducing the historical single-matrix / chain-split model.
         inflow_r = Dict{Tuple{String,Int},Float64}()
         inflow_d = Dict{Tuple{String,Int},Float64}()
-        if inject_inflow && !isempty(S_seas)
+        if inject && !isempty(S_seas)
             for row in rows(run_query("""
                 SELECT id, rep_period, SUM(inflow_profile * peak_inflow) AS e
                 FROM (
@@ -432,9 +433,9 @@ function create_optimization_model!(connection, model, clustering_result; inject
             weight_matrix[d, r]
             *
             (state_of_charge_intra[s, r, H[end]] - state_of_charge_intra_0[s, r]
-             - (inject_inflow ? ebar(s, r) : 0.0))
+             - (inject ? ebar(s, r) : 0.0))
             for r in R
-        ) + (inject_inflow ? ereal(s, d) - soc_chain_spill[s, d] + soc_chain_borrow[s, d] : 0.0)
+        ) + (inject ? ereal(s, d) - soc_chain_spill[s, d] + soc_chain_borrow[s, d] : 0.0)
 
         # Special treatment of the first period (anchors to state_of_charge_inter_0).
         @constraint(model, [s in S_seas],
@@ -472,7 +473,7 @@ function create_optimization_model!(connection, model, clustering_result; inject
             # constraint above + the S^0 pin), and the σ^intra,0 gauge then couples to no
             # observable (σ^inter, slacks and cost depend only on the increments), so the clause
             # is dropped — not made feasible, made unnecessary.
-            if !inject_inflow
+            if !inject
                 @constraint(model,
                     state_of_charge_inter[row.id, D[end]]
                     ==
@@ -596,7 +597,7 @@ function create_optimization_model!(connection, model, clustering_result; inject
         interperiod_storage_capacity_data = run_query(
             "SELECT * FROM inter_period_storage_capacity_constraint_view"
         )
-        if inject_inflow
+        if inject
             # Under injection the band is enforced *hard* on every seasonal asset × base
             # period: the base-day conservation slacks (`soc_chain_spill`/`soc_chain_borrow`)
             # are the recourse, so the hard band is always feasible, and — unlike the soft

@@ -14,8 +14,8 @@
 #   SENSITIVITY — per clustering × weight, regret spread over tol × normalization (robustness).
 #
 # Regret = evaluated_objective_value / reference_optimum − 1 (reference = the n_rep=1 row).
-# Storage is graded day-exact (fix_every=1); the inter-period storage chain (using the
-# operational weights) reconstructs every boundary for every method.
+# Storage is graded day-exact; the inter-period storage chain (using the operational weights,
+# with exact-inflow injection) reconstructs every boundary for every method.
 #
 # Usage: julia --project=BlendedClustering analysis/summarize.jl [result.csv ...]
 
@@ -168,7 +168,8 @@ function summarize_file(path)
         100 * (r.evaluated_objective_value / ref_opt - 1)
     end
     arms.ablabel = [ablation_label(r.clustering_type, r.weight_type, r.normalization) for r in eachrow(arms)]
-    is_investment = !any(skipmissing(getcol(arms, :fix_every)) .>= 1) || all(ismissing, getcol(arms, :total_borrow))
+    # investment (GEP) has no seasonal storage, so total_borrow is entirely missing/NA there.
+    is_investment = all(ismissing, getcol(arms, :total_borrow))
     # development file iff it carries several tolerances at n_rp=10 (the sensitivity sweep).
     at10 = arms[arms.n_rep_periods .== 10, :]
     is_dev = nrow(at10) > 0 && length(unique(at10.tol)) > 1

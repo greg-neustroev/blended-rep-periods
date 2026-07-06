@@ -39,27 +39,6 @@ const DEFAULT_NORMALIZATION = :unscaled
 # asset's per-period total inflow energy (see `find_representative_periods`).
 const DEFAULT_INFLOW_INTEGRAL_WEIGHT = 0.0
 
-# Default storage-regret fixing cadence used when a configuration CSV omits the
-# optional `fix_every` column. `1` pins every base-period boundary state of charge
-# in the full-horizon evaluation model (the original, strictest grading); a coarser
-# `k > 1` pins only every k-th boundary so the full model re-optimizes the storage
-# trajectory between checkpoints (see `evaluate_solution!`). Ignored for any
-# `evaluation_type` other than `:storage_regret`.
-const DEFAULT_FIX_EVERY = 1
-
-# Default for the optional `inject_inflow` column. `true` (the standard model) switches on
-# exact-inflow injection: the inter-period storage chain blends only the dispatch response
-# (Δσ_r − Ē_r), adds each base period's *real* inflow E_d exactly, closes the per-base-day
-# ledger with conservation slacks (spill/borrow at the model's own prices), and enforces the
-# seasonal capacity band as a hard [min,max]·cap constraint (defaulting to [0,1] where a
-# dataset lacks reservoir-level profiles — a data gap the model assumes filled). This keeps
-# every day-resolution term of the storage conservation law at day resolution; only the
-# compressed dispatch response stays blended. `false` recovers the historical chain (blend
-# the whole increment Δσ_r, inflow included, with the soft VOLL band) — retained as the
-# `-injection` ablation arm. See the `storage_inter` / `soc_cap_inter` blocks in
-# `create_optimization_model!`.
-const DEFAULT_INJECT_INFLOW = true
-
 
 """
     read_run_data(path) -> DataFrame
@@ -71,8 +50,7 @@ the optional `normalization`) to `Symbol`s. The projected gradient descent
 tolerance column `tol` is optional and defaults to `DEFAULT_PGD_TOL` when absent;
 the `normalization` column is optional and defaults to `DEFAULT_NORMALIZATION`; the
 `inflow_integral_weight` column is optional and defaults to
-`DEFAULT_INFLOW_INTEGRAL_WEIGHT`; the `fix_every` column is optional and defaults to
-`DEFAULT_FIX_EVERY`.
+`DEFAULT_INFLOW_INTEGRAL_WEIGHT`.
 """
 function read_run_data(path)
     df = CSV.read(path, DataFrame)
@@ -111,8 +89,6 @@ struct ExperimentData
     normalization::Symbol
     cache::Bool
     inflow_integral_weight::Float64
-    fix_every::Int
-    inject_inflow::Bool
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -131,14 +107,6 @@ struct ExperimentData
         inflow_integral_weight = hasproperty(run_data_row, :inflow_integral_weight) ?
                                  Float64(run_data_row.inflow_integral_weight) :
                                  DEFAULT_INFLOW_INTEGRAL_WEIGHT
-        # `fix_every` (the storage-regret fixing cadence k) is optional and defaults
-        # to pinning every boundary; only a coarser cadence relaxes the grading.
-        fix_every = hasproperty(run_data_row, :fix_every) ?
-                    Int(run_data_row.fix_every) : DEFAULT_FIX_EVERY
-        # `inject_inflow` toggles exact-inflow injection in the inter-period storage chain;
-        # optional and on by default (the standard model). Set it false for the ablation arm.
-        inject_inflow = hasproperty(run_data_row, :inject_inflow) ?
-                        Bool(run_data_row.inject_inflow) : DEFAULT_INJECT_INFLOW
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -156,12 +124,6 @@ struct ExperimentData
         if inflow_integral_weight ≠ DEFAULT_INFLOW_INTEGRAL_WEIGHT
             push!(name_parts, "inflowint$(inflow_integral_weight)")
         end
-        if fix_every ≠ DEFAULT_FIX_EVERY
-            push!(name_parts, "fixevery$(fix_every)")
-        end
-        if inject_inflow ≠ DEFAULT_INJECT_INFLOW
-            push!(name_parts, inject_inflow ? "inject" : "noinject")
-        end
         if !cache
             push!(name_parts, "nocache")
         end
@@ -176,8 +138,6 @@ struct ExperimentData
             normalization,
             cache,
             inflow_integral_weight,
-            fix_every,
-            inject_inflow,
             run_data_row.evaluation_type
         )
     end
@@ -270,7 +230,6 @@ struct ExperimentResult
     weight_type::Symbol
     normalization::Symbol
     tol::Float64
-    fix_every::Int
     # Clustering geometry / quality.
     projection_error::Float64
     sigma_max::Union{Float64,Missing}
@@ -411,7 +370,6 @@ struct ExperimentResult
             weight_type,
             data.normalization,
             data.tol,
-            data.fix_every,
             projection_error,
             sigma_max,
             sigma_min,
@@ -466,7 +424,6 @@ Tables.columns(res::ExperimentResult) = (;
     weight_type=[string(res.weight_type)],
     normalization=[string(res.normalization)],
     tol=[res.tol],
-    fix_every=[res.fix_every],
     projection_error=[res.projection_error],
     sigma_max=[res.sigma_max],
     sigma_min=[res.sigma_min],

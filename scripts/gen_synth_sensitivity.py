@@ -25,9 +25,10 @@
 #                  inflow: exact-inflow injection cancels the inflow-hull channel.)
 #   n_regimes      0 ⇒ smooth seasonal continuum; k>0 ⇒ k discrete day archetypes. Sets intrinsic
 #                  dimensionality ⇒ how much SELECTION and n_rp matter.
-#   scale_ratio    relative *variability* of the inflow feature block vs demand/solar. Makes the
-#                  clustering-feature scales heterogeneous across blocks ⇒ NORMALIZATION (economic
-#                  vs unscaled vs minmax) starts to matter; 1.0 ⇒ homogeneous ⇒ normalization moot.
+#   scale_ratio    raw magnitude of the inflow feature block (its profile peak = scale_ratio, while
+#                  demand/solar are peak 1); peak_inflow rescales the energy back so only the
+#                  cross-block clustering-feature scale changes ⇒ `unscaled` is dominated by inflow
+#                  while `economic`/`minmax` are not ⇒ NORMALIZATION matters; 1.0 ⇒ homogeneous.
 #   noise          per-(day,h) multiplicative irregularity on demand/solar. Empirically a SECOND
 #                  out-of-hull stressor (erratic days push the residual-load cloud out of hull ⇒
 #                  weight/reconstruction sensitivity), NOT a clean robustness dial — the robustness
@@ -153,7 +154,7 @@ def gen(outdir, *, beta_days=60.0, gas_cost=30.0, renew_share=0.95, hull_spread=
 
 
 # ---- sweep writers ------------------------------------------------------------------------
-_HDR = "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,normalization,fix_every\n"
+_HDR = "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,normalization\n"
 
 def write_full_sweeps(base):
     # Sensitivity: clustering × weight × normalization × tol at n_rp=10 (dirac has no PGD tol).
@@ -163,20 +164,20 @@ def write_full_sweeps(base):
     tols = {"dirac": ["0.01"], "convex": ["0.01", "0.001", "0.0001", "0.00001"],
             "conical": ["0.01", "0.001", "0.0001", "0.00001"],
             "conical_bounded": ["0.01", "0.001", "0.0001", "0.00001"]}
-    sens = [_HDR, f"1,{D*H},k_means,dirac,0.01,none,economic,1\n"]
+    sens = [_HDR, f"1,{D*H},k_means,dirac,0.01,none,economic\n"]
     for cl in clus:
         for w in ["dirac", "convex", "conical", "conical_bounded"]:
             for nrm in norms:
                 for t in tols[w]:
-                    sens.append(f"10,{H},{cl},{w},{t},storage_regret,{nrm},1\n")
+                    sens.append(f"10,{H},{cl},{w},{t},storage_regret,{nrm}\n")
     open(f"inputs/synth/sens_{base}.csv", "w").write("".join(sens))
     # Ablation: PROPOSED vs single-component knockouts over the n_rp grid {10,20,40,80}.
-    abl = [_HDR, f"1,{D*H},k_means,dirac,0.01,none,economic,1\n"]
+    abl = [_HDR, f"1,{D*H},k_means,dirac,0.01,none,economic\n"]
     for n in [10, 20, 40, 80]:
-        abl.append(f"{n},{H},conical_hull,convex,0.01,storage_regret,economic,1\n")   # PROPOSED
-        abl.append(f"{n},{H},conical_hull,convex,0.01,storage_regret,unscaled,1\n")   # -economic
-        abl.append(f"{n},{H},convex_hull,convex,0.01,storage_regret,economic,1\n")    # -conic-selection
-        abl.append(f"{n},{H},conical_hull,dirac,0.01,storage_regret,economic,1\n")    # -convex-weights
+        abl.append(f"{n},{H},conical_hull,convex,0.01,storage_regret,economic\n")   # PROPOSED
+        abl.append(f"{n},{H},conical_hull,convex,0.01,storage_regret,unscaled\n")   # -economic
+        abl.append(f"{n},{H},convex_hull,convex,0.01,storage_regret,economic\n")    # -conic-selection
+        abl.append(f"{n},{H},conical_hull,dirac,0.01,storage_regret,economic\n")    # -convex-weights
     open(f"inputs/synth/{base}.csv", "w").write("".join(abl))
 
 
@@ -185,8 +186,8 @@ def write_panel_sweep(path):
     # dataset — the weight axis (conical_hull × 4 weights @ economic), the selection axis (6
     # selections × convex @ economic), and the normalization axis (conical_hull/convex × 3 norms).
     # Running it on each knob variant tells which METHOD axis a given DATA property moves.
-    rows = [_HDR, f"1,{D*H},k_means,dirac,0.01,none,economic,1\n"]
-    add = lambda cl, w, nrm: rows.append(f"10,{H},{cl},{w},0.01,storage_regret,{nrm},1\n")
+    rows = [_HDR, f"1,{D*H},k_means,dirac,0.01,none,economic\n"]
+    add = lambda cl, w, nrm: rows.append(f"10,{H},{cl},{w},0.01,storage_regret,{nrm}\n")
     for w in ["dirac", "convex", "conical", "conical_bounded"]:      # weight axis
         add("conical_hull", w, "economic")
     for cl in ["k_means", "k_medoids", "hierarchical", "chronological", "convex_hull"]:  # selection axis
