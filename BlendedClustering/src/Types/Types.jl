@@ -57,6 +57,19 @@ const DEFAULT_FIX_EVERY = 1
 #   - `:conical` — conical (nonnegative-orthant) fit.
 const DEFAULT_CHAIN_WEIGHT_TYPE = :none
 
+# Default for the optional `inject_inflow` column. `true` (the standard model) switches on
+# exact-inflow injection: the inter-period storage chain blends only the dispatch response
+# (Δσ_r − Ē_r), adds each base period's *real* inflow E_d exactly, closes the per-base-day
+# ledger with conservation slacks (spill/borrow at the model's own prices), and enforces the
+# seasonal capacity band as a hard [min,max]·cap constraint (defaulting to [0,1] where a
+# dataset lacks reservoir-level profiles — a data gap the model assumes filled). This keeps
+# every day-resolution term of the storage conservation law at day resolution; only the
+# compressed dispatch response stays blended. `false` recovers the historical chain (blend
+# the whole increment Δσ_r, inflow included, with the soft VOLL band) — retained as the
+# `-injection` ablation arm. See the `storage_inter` / `soc_cap_inter` blocks in
+# `create_optimization_model!`.
+const DEFAULT_INJECT_INFLOW = true
+
 
 """
     read_run_data(path) -> DataFrame
@@ -110,6 +123,7 @@ struct ExperimentData
     inflow_integral_weight::Float64
     fix_every::Int
     chain_weight_type::Symbol
+    inject_inflow::Bool
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -136,6 +150,10 @@ struct ExperimentData
         # and `:none` by default (the single matrix plays both roles).
         chain_weight_type = hasproperty(run_data_row, :chain_weight_type) ?
                             Symbol(run_data_row.chain_weight_type) : DEFAULT_CHAIN_WEIGHT_TYPE
+        # `inject_inflow` toggles exact-inflow injection in the inter-period storage chain;
+        # optional and off by default so unset configs reproduce the historical model bit-for-bit.
+        inject_inflow = hasproperty(run_data_row, :inject_inflow) ?
+                        Bool(run_data_row.inject_inflow) : DEFAULT_INJECT_INFLOW
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -159,6 +177,9 @@ struct ExperimentData
         if chain_weight_type ≠ DEFAULT_CHAIN_WEIGHT_TYPE
             push!(name_parts, "chain$(chain_weight_type)")
         end
+        if inject_inflow ≠ DEFAULT_INJECT_INFLOW
+            push!(name_parts, inject_inflow ? "inject" : "noinject")
+        end
         if !cache
             push!(name_parts, "nocache")
         end
@@ -175,6 +196,7 @@ struct ExperimentData
             inflow_integral_weight,
             fix_every,
             chain_weight_type,
+            inject_inflow,
             run_data_row.evaluation_type
         )
     end
