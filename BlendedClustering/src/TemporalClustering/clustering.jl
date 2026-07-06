@@ -1011,7 +1011,6 @@ function cluster_using_experiment_data(experiment_data, connection)
     timestep_duration,
     chain_weight_type=experiment_data.chain_weight_type,
     inflow_peaks,
-    init=:kmcen
   )
 end
 
