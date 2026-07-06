@@ -11,7 +11,7 @@
 # variance bars). The 20 non-k-means combos are deterministic across seeds.
 inputs = ["tyndp/gep", "tyndp/p2x", "sienna/118bus"]
 master_seed = 382507
-n_seeds     = 3
+n_seeds     = 10
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

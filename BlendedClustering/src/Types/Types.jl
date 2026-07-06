@@ -47,15 +47,18 @@ const DEFAULT_INFLOW_INTEGRAL_WEIGHT = 0.0
 # `evaluation_type` other than `:storage_regret`.
 const DEFAULT_FIX_EVERY = 1
 
-# Default for the optional `chain_weight_type` column: `:none` means the single weight
-# matrix plays both roles (operational and storage-chain), the historical behaviour. Any
-# other value fits a *separate* chain weight matrix W^ch (see `fit_chain_weights`) for
-# the inter-period storage chain, while the operational weights keep their role in the
-# objective and ramping. Supported (non-negative) chain classes:
-#   - `:convex`  — convex (simplex) fit, partition-of-unity rows (annual balance earned
-#                  by dispatch, not a closure gauge);
-#   - `:conical` — conical (nonnegative-orthant) fit.
-const DEFAULT_CHAIN_WEIGHT_TYPE = :none
+# Default for the optional `inject_inflow` column. `true` (the standard model) switches on
+# exact-inflow injection: the inter-period storage chain blends only the dispatch response
+# (Δσ_r − Ē_r), adds each base period's *real* inflow E_d exactly, closes the per-base-day
+# ledger with conservation slacks (spill/borrow at the model's own prices), and enforces the
+# seasonal capacity band as a hard [min,max]·cap constraint (defaulting to [0,1] where a
+# dataset lacks reservoir-level profiles — a data gap the model assumes filled). This keeps
+# every day-resolution term of the storage conservation law at day resolution; only the
+# compressed dispatch response stays blended. `false` recovers the historical chain (blend
+# the whole increment Δσ_r, inflow included, with the soft VOLL band) — retained as the
+# `-injection` ablation arm. See the `storage_inter` / `soc_cap_inter` blocks in
+# `create_optimization_model!`.
+const DEFAULT_INJECT_INFLOW = true
 
 
 """
@@ -109,7 +112,7 @@ struct ExperimentData
     cache::Bool
     inflow_integral_weight::Float64
     fix_every::Int
-    chain_weight_type::Symbol
+    inject_inflow::Bool
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
@@ -132,10 +135,10 @@ struct ExperimentData
         # to pinning every boundary; only a coarser cadence relaxes the grading.
         fix_every = hasproperty(run_data_row, :fix_every) ?
                     Int(run_data_row.fix_every) : DEFAULT_FIX_EVERY
-        # `chain_weight_type` selects the separate storage-chain weight class; optional
-        # and `:none` by default (the single matrix plays both roles).
-        chain_weight_type = hasproperty(run_data_row, :chain_weight_type) ?
-                            Symbol(run_data_row.chain_weight_type) : DEFAULT_CHAIN_WEIGHT_TYPE
+        # `inject_inflow` toggles exact-inflow injection in the inter-period storage chain;
+        # optional and on by default (the standard model). Set it false for the ablation arm.
+        inject_inflow = hasproperty(run_data_row, :inject_inflow) ?
+                        Bool(run_data_row.inject_inflow) : DEFAULT_INJECT_INFLOW
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -156,8 +159,8 @@ struct ExperimentData
         if fix_every ≠ DEFAULT_FIX_EVERY
             push!(name_parts, "fixevery$(fix_every)")
         end
-        if chain_weight_type ≠ DEFAULT_CHAIN_WEIGHT_TYPE
-            push!(name_parts, "chain$(chain_weight_type)")
+        if inject_inflow ≠ DEFAULT_INJECT_INFLOW
+            push!(name_parts, inject_inflow ? "inject" : "noinject")
         end
         if !cache
             push!(name_parts, "nocache")
@@ -174,7 +177,7 @@ struct ExperimentData
             cache,
             inflow_integral_weight,
             fix_every,
-            chain_weight_type,
+            inject_inflow,
             run_data_row.evaluation_type
         )
     end
@@ -199,11 +202,6 @@ mutable struct ClusteringResult
     weight_matrix::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}}
     clustering_matrix::Union{Matrix{Float64},Nothing}
     rp_matrix::Union{Matrix{Float64},Nothing}
-    # Optional signed "chain" weights W^ch for the storage-chain (prolongation) role,
-    # fit separately from the operational weights `weight_matrix` (W^op). `nothing`
-    # means the single-matrix behaviour: the chain reuses `weight_matrix`. Same
-    # `D × R` shape and RP ordering as `weight_matrix` when present.
-    chain_weight_matrix::Union{Matrix{Float64},Nothing}
     # Free-form diagnostics captured while selecting representatives and fitting
     # weights (greedy-hull cache hit/miss counts, per-fit PGD iteration counts).
     # Populated in place so the experiment layer can record them without re-running
@@ -213,12 +211,11 @@ end
 
 # Convenience constructors: the clustering/representative-period matrices are not
 # always available (e.g. the single-period fast path), so default them to nothing;
-# the chain weights default to nothing (single-matrix behaviour); diagnostics default
-# to an empty dict.
+# diagnostics default to an empty dict.
 ClusteringResult(profiles, weight_matrix, clustering_matrix, rp_matrix) =
-    ClusteringResult(profiles, weight_matrix, clustering_matrix, rp_matrix, nothing, Dict{Symbol,Any}())
+    ClusteringResult(profiles, weight_matrix, clustering_matrix, rp_matrix, Dict{Symbol,Any}())
 ClusteringResult(profiles, weight_matrix) =
-    ClusteringResult(profiles, weight_matrix, nothing, nothing, nothing, Dict{Symbol,Any}())
+    ClusteringResult(profiles, weight_matrix, nothing, nothing, Dict{Symbol,Any}())
 
 # --- Helpers for populating the per-run summary record (capture-once stats) ---
 

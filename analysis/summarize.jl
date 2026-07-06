@@ -14,8 +14,8 @@
 #   SENSITIVITY — per clustering × weight, regret spread over tol × normalization (robustness).
 #
 # Regret = evaluated_objective_value / reference_optimum − 1 (reference = the n_rep=1 row).
-# Storage is graded day-exact (fix_every=1); the convex chain reconstructs every boundary, so
-# every real-period method carries it (k-means, no anchors, is the no-chain baseline).
+# Storage is graded day-exact (fix_every=1); the inter-period storage chain (using the
+# operational weights) reconstructs every boundary for every method.
 #
 # Usage: julia --project=BlendedClustering analysis/summarize.jl [result.csv ...]
 
@@ -58,18 +58,17 @@ function comparison_matrix(df)
 end
 
 # Ablation arm labels (5bus): PROPOSED with one component knocked out.
-function ablation_label(ct, wt, nrm, has_chain)
-    if ct == "conical_hull" && wt == "convex" && nrm == "economic" && has_chain; return "PROPOSED"
-    elseif ct == "conical_hull" && wt == "convex" && nrm == "unscaled" && has_chain; return "ablate: -economic"
-    elseif ct == "convex_hull" && wt == "convex" && nrm == "economic" && has_chain; return "ablate: -conic-selection"
-    elseif ct == "conical_hull" && wt == "dirac" && nrm == "economic" && has_chain; return "ablate: -convex-weights"
-    elseif ct == "conical_hull" && wt == "convex" && nrm == "economic" && !has_chain; return "ablate: -chain-split"
+function ablation_label(ct, wt, nrm)
+    if ct == "conical_hull" && wt == "convex" && nrm == "economic"; return "PROPOSED"
+    elseif ct == "conical_hull" && wt == "convex" && nrm == "unscaled"; return "ablate: -economic"
+    elseif ct == "convex_hull" && wt == "convex" && nrm == "economic"; return "ablate: -conic-selection"
+    elseif ct == "conical_hull" && wt == "dirac" && nrm == "economic"; return "ablate: -convex-weights"
     end
     return missing
 end
 
 function ablation_table(df)
-    order = ["PROPOSED", "ablate: -economic", "ablate: -conic-selection", "ablate: -convex-weights", "ablate: -chain-split"]
+    order = ["PROPOSED", "ablate: -economic", "ablate: -conic-selection", "ablate: -convex-weights"]
     sub = df[.!ismissing.(df.ablabel), :]
     count(l -> any(sub.ablabel .=== l), order) < 2 && return
     grid = sort(unique(sub.n_rep_periods))
@@ -105,21 +104,28 @@ end
 
 # per clustering × weight, regret spread over the tol × normalization grid (robustness).
 function sensitivity_tables(df)
-    # keep the per-method-default chain (convex for real-period, none for k-means); this drops
-    # the -chain ablation (conical_hull with chain off) so it does not pollute the grouping.
-    sens = df[(df.n_rep_periods .== 10) .& .!occursin.("nocache", df.name) .&
-              (df.has_chain .== (df.clustering_type .!= "k_means")), :]
+    sens = df[(df.n_rep_periods .== 10) .& .!occursin.("nocache", df.name), :]
     (nrow(sens) < 2 || length(unique(sens.tol)) < 2) && return
     combos = [(cl, w) for cl in METHOD_ORDER for w in WEIGHT_ORDER
               if any((sens.clustering_type .== cl) .& (sens.weight_type .== w))]
-    println("\nSENSITIVITY (5bus dev) — regret (%) spread over tol × normalization, n_rp=10 (smaller range ⇒ more robust; * = PROPOSED)")
-    @printf("  %-26s %10s %10s %10s %10s\n", "clustering / weight", "min", "median", "max", "range")
-    for (cl, w) in combos
-        v = collect(skipmissing(sens[(sens.clustering_type .== cl) .& (sens.weight_type .== w), :regret_pct]))
-        isempty(v) && continue
-        star = (cl, w) == PROPOSED ? " *" : ""
-        @printf("  %-26s %9.1f%% %9.1f%% %9.1f%% %9.1f%%\n", "$cl / $w$star",
-            minimum(v), median(v), maximum(v), maximum(v) - minimum(v))
+    # one table per normalization so a single fragile normalization (e.g. minmax) does not
+    # inflate the range of an otherwise-robust method; here range = spread over tol alone.
+    norm_order = ["economic", "unscaled", "minmax"]
+    norms = [nrm for nrm in norm_order if any(sens.normalization .== nrm)]
+    append!(norms, sort(unique(sens.normalization[.!in.(sens.normalization, Ref(norm_order))])))
+    println("\nSENSITIVITY (5bus dev) — regret (%) spread over tol, n_rp=10, per normalization (smaller range ⇒ more robust; * = PROPOSED)")
+    for nrm in norms
+        ns = sens[sens.normalization .== nrm, :]
+        length(unique(ns.tol)) < 2 && continue
+        println("  normalization = $nrm")
+        @printf("  %-26s %10s %10s %10s %10s\n", "clustering / weight", "min", "median", "max", "range")
+        for (cl, w) in combos
+            v = collect(skipmissing(ns[(ns.clustering_type .== cl) .& (ns.weight_type .== w), :regret_pct]))
+            isempty(v) && continue
+            star = (cl, w) == PROPOSED ? " *" : ""
+            @printf("  %-26s %9.1f%% %9.1f%% %9.1f%% %9.1f%%\n", "$cl / $w$star",
+                minimum(v), median(v), maximum(v), maximum(v) - minimum(v))
+        end
     end
     # realized N(ε): median PGD iterations per tol (grows as ε shrinks; α, N fixed).
     tols = sort(unique(sens.tol); rev=true)
@@ -157,12 +163,11 @@ function summarize_file(path)
     @printf("  reference optimum (n_rep=1): %.6g\n", ref_opt)
 
     arms = df[df.n_rep_periods .!= 1, :]
-    arms.has_chain = occursin.("chain", arms.name)
     arms.regret_pct = map(eachrow(arms)) do r
         (ismissing(r.evaluated_objective_value) || r.evaluated_objective_value <= 0) && return missing
         100 * (r.evaluated_objective_value / ref_opt - 1)
     end
-    arms.ablabel = [ablation_label(r.clustering_type, r.weight_type, r.normalization, r.has_chain) for r in eachrow(arms)]
+    arms.ablabel = [ablation_label(r.clustering_type, r.weight_type, r.normalization) for r in eachrow(arms)]
     is_investment = !any(skipmissing(getcol(arms, :fix_every)) .>= 1) || all(ismissing, getcol(arms, :total_borrow))
     # development file iff it carries several tolerances at n_rp=10 (the sensitivity sweep).
     at10 = arms[arms.n_rep_periods .== 10, :]
@@ -178,7 +183,11 @@ function summarize_file(path)
     # SECONDARY — at the largest n_rp, PROPOSED vs the k-means / k-medoids dirac baselines.
     grid = sort(unique(arms.n_rep_periods)); nfocus = maximum(grid)
     show_combos = [PROPOSED, ("k_means", "dirac"), ("k_medoids", "dirac")]
-    sub = arms[arms.n_rep_periods .== nfocus, :]
+    # pin to the canonical config so ablation twins (unscaled, other tol) that share a
+    # clustering×weight do not pool into these metrics; a no-op on comparison files (economic/0.01 only).
+    canon = arms[.!occursin.("nocache", arms.name) .&
+                 (arms.normalization .== "economic") .& isapprox.(arms.tol, 0.01; atol=1e-12), :]
+    sub = canon[canon.n_rep_periods .== nfocus, :]
     haveany = any(any((sub.clustering_type .== cl) .& (sub.weight_type .== w)) for (cl, w) in show_combos)
     if haveany
         println("\nSECONDARY METRICS at n_rp=$nfocus  (curtailment, borrow-infeasibility, max ΣW, true cost split)")
@@ -205,7 +214,7 @@ function summarize_file(path)
 
     # RUNTIME (PROPOSED) vs n_rp — per stage + PGD iterations + cache hit-rate.
     prop = arms[(arms.clustering_type .== PROPOSED[1]) .& (arms.weight_type .== PROPOSED[2]) .&
-                (arms.normalization .== "economic") .& (arms.has_chain .| .!any(skipmissing(getcol(arms,:fix_every)).>=1)) .&
+                (arms.normalization .== "economic") .&
                 isapprox.(arms.tol, 0.01; atol=1e-12), :]
     if !isempty(prop)
         println("\nRUNTIME (PROPOSED) vs n_rp — seconds per stage, PGD iters, cache hit-rate")

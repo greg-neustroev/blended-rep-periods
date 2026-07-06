@@ -52,7 +52,8 @@ function run_experiment(
     # Create model
     @info styled"{bold:Creating the model}"
 
-    time_to_formulate_model = @elapsed create_optimization_model!(connection, model, clustering_result)
+    time_to_formulate_model = @elapsed create_optimization_model!(connection, model, clustering_result;
+                                                                  inject_inflow=experiment_data.inject_inflow)
 
     # Solve
     @info styled"{bold:Solving the model}"

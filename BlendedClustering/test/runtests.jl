@@ -211,52 +211,6 @@ end
     end
   end
 
-  @testset "experiment config schema: chain_weight_type default none / suffixes name" begin
-    mktempdir() do dir
-      # Absent column -> chain split off, name unchanged.
-      path = joinpath(dir, "run.csv")
-      open(path, "w") do io
-        println(io, "n_rep_periods,period_length,clustering_type,weight_type,evaluation_type")
-        println(io, "5,24,hull,convex,storage_regret")
-      end
-      ed = ExperimentData(first(eachrow(read_run_data(path))), "gep")
-      @test ed.chain_weight_type == BC.DEFAULT_CHAIN_WEIGHT_TYPE
-      @test ed.chain_weight_type == :none
-      @test ed.name == "gep_5_24_hull_convex_$(BC.DEFAULT_PGD_TOL)"
-      # Explicit chain split -> field set and name carries the `_chain<class>` suffix.
-      path2 = joinpath(dir, "run2.csv")
-      open(path2, "w") do io
-        println(io, "n_rep_periods,period_length,clustering_type,weight_type,tol,evaluation_type,chain_weight_type")
-        println(io, "5,24,convex_hull,convex,0.01,storage_regret,convex")
-      end
-      ed2 = ExperimentData(first(eachrow(read_run_data(path2))), "gep")
-      @test ed2.chain_weight_type == :convex
-      @test ed2.name == "gep_5_24_convex_hull_convex_0.01_chainconvex"
-    end
-  end
-
-  @testset "fit_chain_weights: convex and conical (non-negative) classes" begin
-    fcw = BC.TemporalClustering.fit_chain_weights
-    # 2 assets x 6 base periods, 3 representatives.
-    G = [1.0 3.0 2.0 5.0 0.0 4.0;
-         2.0 1.0 0.0 3.0 1.0 2.0]
-    sel = [1, 4, 6]
-    # Convex: simplex rows (sum to 1, nonnegative). Same D x R shape as W^op; annual
-    # balance is earned by dispatch, so there is no column-sum-zero closure gauge.
-    Wc, resc = fcw(G, sel; weight_type=:convex)
-    @test size(Wc) == (6, 3)                               # D x R, same shape as W^op
-    @test all(Wc .>= -1e-9)
-    @test all(abs.(vec(sum(Wc, dims=2)) .- 1.0) .< 1e-6)   # rows sum to 1
-    @test resc >= -1e-12                                    # residual defined (>=0)
-    # Conical: nonnegative, no sum constraint (unbounded above).
-    Wcn, rescn = fcw(G, sel; weight_type=:conical)
-    @test size(Wcn) == (6, 3)
-    @test all(Wcn .>= -1e-9)
-    @test rescn >= -1e-12
-    # A pruned/unsupported chain class is rejected rather than silently accepted.
-    @test_throws ArgumentError fcw(G, sel; weight_type=:signed)
-  end
-
   @testset "resolve_input + cross-sweep experiment identity" begin
     ri = BC.Experiments.resolve_input
     @test ri("tyndp/gep") == ("tyndp/gep", "tyndp/gep")

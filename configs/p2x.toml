@@ -4,7 +4,7 @@
 # off for k-means. Only k-means is seed-sensitive.
 inputs = ["tyndp/p2x"]
 master_seed = 382507
-n_seeds     = 3
+n_seeds     = 10
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

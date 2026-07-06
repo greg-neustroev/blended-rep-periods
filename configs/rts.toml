@@ -8,7 +8,7 @@
 # studies, and trim {320,500} if time is short. Only k-means is seed-sensitive.
 inputs = ["gridmod/rts"]
 master_seed = 382507
-n_seeds     = 3
+n_seeds     = 10
 solver      = "gurobi"
 inputs_dir  = "../inputs"
 outputs_dir = "../outputs"

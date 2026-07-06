@@ -6,8 +6,17 @@ reachable through `connection` and the representative-period weights in
 `clustering_result`. Adds all variables, the objective, and every constraint
 family in place, and returns a dictionary of per-block formulation timings (in
 seconds), including the `"duckdb_queries"` total spent querying DuckDB.
+
+With `inject_inflow = true` the inter-period storage chain reconstructs each base
+period's seasonal increment from only the *dispatch response* of the representatives
+(the net increment minus each RP's exogenous inflow) and adds the base period's own
+*real* inflow exactly, instead of blending the whole increment (inflow included). This
+is a right-hand-side data edit of the `storage_inter` constraints — no extra variables
+or rows — that removes the integrated inflow-approximation drift and restores the true
+annual water balance; the absolute-level reconstruction clause is dropped with it (the
+chain becomes increment-only, exactly as under the chain split).
 """
-function create_optimization_model!(connection, model, clustering_result)
+function create_optimization_model!(connection, model, clustering_result; inject_inflow::Bool=false)
     # By default JuMP builds a String name for every variable and constraint
     # (e.g. "power_out[asset,1,4567]"); on the full-horizon models that is
     # millions of string interpolations and allocations, and they dominate the
@@ -58,18 +67,18 @@ function create_optimization_model!(connection, model, clustering_result)
         rp_weight = sum(clustering_result.weight_matrix, dims=1)
         rp_weight .*= operations_weight
 
-        # The inter-period storage chain reconstructs each base period's seasonal
-        # storage *increment* from the representatives — the "prolongation" role of the
-        # weights. When a separate signed chain matrix W^ch was fit (chain split), it is
-        # used for those increment dynamics (2i′/2j′); the objective/aggregation
-        # (rp_weight above) and the inter-period ramping keep the operational W^op
-        # (`weight_matrix`). With no split the chain reuses `weight_matrix`, exactly the
-        # historical single-matrix model. Both matrices share `rp_matrix`/`R`, so they
-        # are indexed identically.
-        chain_split = clustering_result.chain_weight_matrix ≢ nothing
-        chain_weight_matrix = chain_split ?
-                              clustering_result.chain_weight_matrix :
-                              clustering_result.weight_matrix
+        # The inter-period storage chain reconstructs each base period's seasonal storage
+        # *increment* from the representatives (the "prolongation" role of the weights),
+        # using the operational weight matrix — the same weights that drive the
+        # objective/aggregation (`rp_weight`) and the inter-period ramping.
+        weight_matrix = clustering_result.weight_matrix
+        # Exact-inflow injection is a multi-period *reconstruction* device: it only bites when
+        # a chain of base periods is rebuilt from fewer representatives. A single base period
+        # (the n_rp=1 reference optimum and the full-horizon evaluation model) has no chain to
+        # reconstruct, so injection there would only let its conservation slacks perturb the
+        # annual balance. Disable it in that case so those models stay identical to the
+        # historical formulation and the regret denominator is unchanged.
+        inject_inflow = inject_inflow && length(D) > 1
     end
 
     @timed_step timings "variables" "Creating variables" begin
@@ -91,6 +100,20 @@ function create_optimization_model!(connection, model, clustering_result)
         @variable(model, soc_band_over[S_seas, D] ≥ 0)
         @variable(model, soc_band_under[S_seas, D] ≥ 0)
         @variable(model, flow[L, R, H])
+        # Per-base-day conservation slacks on the inter-period storage chain, added only
+        # under exact-inflow injection. `soc_chain_spill` removes mass (spill) and
+        # `soc_chain_borrow` adds it (energy-not-served), both at base-day resolution — the
+        # resolution the injected forcing E_d already lives at. They are the recourse that
+        # lets the seasonal band be *hard* (see `soc_cap_inter`) while staying feasible for
+        # any dispatch: a run-of-river reservoir whose real daily inflow overtops the buffer
+        # spills the excess here (correcting every downstream day at once) instead of letting
+        # the reconstructed trajectory ratchet out of the reservoir. Priced at the asset's own
+        # spillage/borrow cost (the full-model prices), so the regime is arbitrated by price,
+        # not a classifier: a seasonal reservoir with a large buffer leaves them at zero.
+        if inject_inflow
+            @variable(model, soc_chain_spill[S_seas, D] ≥ 0)
+            @variable(model, soc_chain_borrow[S_seas, D] ≥ 0)
+        end
     end
 
     @timed_step timings "objective" "Creating objective" begin
@@ -169,8 +192,28 @@ function create_optimization_model!(connection, model, clustering_result)
             end
         end
 
+        # Cost of the per-base-day chain conservation slacks (injection only; zero otherwise).
+        # Same per-base-day pricing convention as the band above (operations_weight × unit
+        # cost): spill at the asset's spillage_cost, borrow at its borrow_cost — the prices the
+        # full model pays. Kept as their own expressions (not folded into cost_of_spillage /
+        # cost_of_borrow, which accumulate the intra-period slacks over (r, h)) so the chain
+        # ledger can be reported separately from the intra-period physics.
+        @expression(model, cost_of_chain_spill, AffExpr(0.0))
+        @expression(model, cost_of_chain_borrow, AffExpr(0.0))
+        if inject_inflow
+            spill_price = Dict(string(r.id) => r.spillage_cost
+                               for r in rows(run_query("SELECT id, spillage_cost FROM spillage_cost_objective_view")))
+            borrow_price = Dict(string(r.id) => r.borrow_cost
+                                for r in rows(run_query("SELECT id, borrow_cost FROM borrow_cost_objective_view")))
+            for s in S_seas, d in D
+                add_to_expression!(cost_of_chain_spill, operations_weight * spill_price[string(s)], soc_chain_spill[s, d])
+                add_to_expression!(cost_of_chain_borrow, operations_weight * borrow_price[string(s)], soc_chain_borrow[s, d])
+            end
+        end
+
         # Finally, formulate the objective function as the sum of the costs
-        @objective(model, Min, cost_of_investment + cost_of_operations + cost_of_spillage + cost_of_borrow + cost_of_soc_band)
+        @objective(model, Min, cost_of_investment + cost_of_operations + cost_of_spillage +
+                   cost_of_borrow + cost_of_soc_band + cost_of_chain_spill + cost_of_chain_borrow)
     end
 
     @info "Creating constraints"
@@ -343,28 +386,62 @@ function create_optimization_model!(connection, model, clustering_result)
     end
 
     @timed_step timings "storage_inter" "- Adding inter-period storage constraints" begin
-        # There is no additional data to query here, so we just iterate
-        # through the seasonal storage assets and base periods, with the special
-        # treatment of the first period
+        # Exact-inflow injection. The net RP increment decomposes as Δσ_r = δ_r + Ē_{s,r},
+        # where Ē_{s,r} = Σ_h inflow_profile·peak_inflow is representative period r's total
+        # (exogenous) inflow and δ_r is the dispatch response. With injection on, the chain
+        # blends only δ_r = Δσ_r − Ē_{s,r} and the base period's *real* total inflow
+        # E_{s,d} = Σ_{h∈d} inflow·peak_inflow enters exactly on the RHS. Both are pure data
+        # (no τ — inflow is already per-step energy, matching the intra balance). `inflow_r`
+        # is keyed (id, rep_period) from the seasonal views; `inflow_d` is keyed (id, period)
+        # from the raw `profiles` split, so it carries every base day's actual inflow. Both
+        # default to 0 for a seasonal asset without an inflow profile (injection is then a
+        # no-op for it). When injection is off, the maps are unused and the chain blends the
+        # whole increment, reproducing the historical single-matrix / chain-split model.
+        inflow_r = Dict{Tuple{String,Int},Float64}()
+        inflow_d = Dict{Tuple{String,Int},Float64}()
+        if inject_inflow && !isempty(S_seas)
+            for row in rows(run_query("""
+                SELECT id, rep_period, SUM(inflow_profile * peak_inflow) AS e
+                FROM (
+                    SELECT id, rep_period, inflow_profile, peak_inflow
+                    FROM intra_period_seasonal_storage_can_charge_constraint_view
+                    UNION ALL
+                    SELECT id, rep_period, inflow_profile, peak_inflow
+                    FROM intra_period_seasonal_storage_cannot_charge_constraint_view
+                )
+                GROUP BY id, rep_period
+                """))
+                inflow_r[(string(row.id), Int(row.rep_period))] = row.e
+            end
+            for row in rows(run_query("""
+                SELECT p.id AS id, p.period AS period, SUM(p.value * s.peak_inflow) AS e
+                FROM (SELECT id, period, value FROM profiles WHERE profile_type = 'inflows') p
+                JOIN seasonal_storage_assets s ON p.id = s.id
+                GROUP BY p.id, p.period
+                """))
+                inflow_d[(string(row.id), Int(row.period))] = row.e
+            end
+        end
+        ebar(s, r) = get(inflow_r, (string(s), r), 0.0)
+        ereal(s, d) = get(inflow_d, (string(s), d), 0.0)
+
+        # Blended dispatch increment for base period d (whole increment when injection is off).
+        # Under injection the base-day conservation slacks close the ledger at base-day
+        # resolution: spill removes over-accumulated inflow, borrow supplies a shortfall.
+        increment(s, d) = sum(
+            weight_matrix[d, r]
+            *
+            (state_of_charge_intra[s, r, H[end]] - state_of_charge_intra_0[s, r]
+             - (inject_inflow ? ebar(s, r) : 0.0))
+            for r in R
+        ) + (inject_inflow ? ereal(s, d) - soc_chain_spill[s, d] + soc_chain_borrow[s, d] : 0.0)
+
+        # Special treatment of the first period (anchors to state_of_charge_inter_0).
         @constraint(model, [s in S_seas],
-            state_of_charge_inter[s, 1] - state_of_charge_inter_0[s]
-            ==
-            sum(
-                chain_weight_matrix[1, r]
-                *
-                (state_of_charge_intra[s, r, H[end]] - state_of_charge_intra_0[s, r])
-                for r in R
-            )
+            state_of_charge_inter[s, 1] - state_of_charge_inter_0[s] == increment(s, 1)
         )
         @constraint(model, [s in S_seas, d in D[2:end]],
-            state_of_charge_inter[s, d] - state_of_charge_inter[s, d-1]
-            ==
-            sum(
-                chain_weight_matrix[d, r]
-                *
-                (state_of_charge_intra[s, r, H[end]] - state_of_charge_intra_0[s, r])
-                for r in R
-            )
+            state_of_charge_inter[s, d] - state_of_charge_inter[s, d-1] == increment(s, d)
         )
     end
 
@@ -386,18 +463,16 @@ function create_optimization_model!(connection, model, clustering_result)
         initial_storage_data = run_query("SELECT * FROM initial_storage_constraint_view")
         for row in rows(initial_storage_data)
             @constraint(model, state_of_charge_inter_0[row.id] == row.initial_storage_level)
-            # The end-of-horizon tether σ^inter_D = S^0 does two jobs that the single
-            # matrix fuses: cyclic closure, and gauge-fixing the per-RP additive freedom
-            # in σ^intra,0. Under the chain split both are already covered without an
-            # absolute reconstruction: column-sum-zero W^ch telescopes the increment
-            # dynamics to σ^inter_D = σ^inter_0 for *any* dispatch (closure, with the
-            # cyclic constraint above + the S^0 pin), and the σ^intra,0 gauge couples to
-            # no observable (σ^inter, slacks, and cost all depend only on the increments).
-            # A signed W^ch cannot carry an absolute level anyway, so the reconstruction
-            # is dropped — it is not made feasible, it is made unnecessary. The single-
-            # matrix model keeps it (its partition-of-unity weights both close the cycle
-            # and reconstruct S^0); that is the special case, not the general routing.
-            if !chain_split
+            # The end-of-horizon tether σ^inter_D = S^0 does two jobs the single-matrix chain
+            # fuses: cyclic closure, and gauge-fixing the per-RP additive freedom in σ^intra,0.
+            # Its partition-of-unity weights both close the cycle and reconstruct S^0, so the
+            # historical (non-injected) model keeps this absolute-reconstruction clause. Exact-
+            # inflow injection makes the chain increment-only: column-sum closure telescopes the
+            # increment dynamics to σ^inter_D = σ^inter_0 for *any* dispatch (with the cyclic
+            # constraint above + the S^0 pin), and the σ^intra,0 gauge then couples to no
+            # observable (σ^inter, slacks and cost depend only on the increments), so the clause
+            # is dropped — not made feasible, made unnecessary.
+            if !inject_inflow
                 @constraint(model,
                     state_of_charge_inter[row.id, D[end]]
                     ==
@@ -518,33 +593,55 @@ function create_optimization_model!(connection, model, clustering_result)
     end
 
     @timed_step timings "soc_cap_inter" "- Adding inter-period maximum state of charge constraints" begin
-        # The band on the inter-period state of charge is enforced *softly*: rather
-        # than hard variable bounds, the level may breach the band by paying the
-        # `cost_of_soc_band` penalty through the elastic slacks `soc_band_under`
-        # (below the lower level) and `soc_band_over` (above the upper level). The
-        # variable keeps its physical `≥ 0` floor (a deficit there is met by the
-        # intra-period `borrow` slack, never infeasible); only the band's min/max
-        # *levels* are relaxed. That is the single thing a conical prolongation can
-        # over-scale into infeasibility, so softening it makes the model feasible for
-        # any weight class while the exact penalty leaves feasible cells untouched.
         interperiod_storage_capacity_data = run_query(
             "SELECT * FROM inter_period_storage_capacity_constraint_view"
         )
-        for row in rows(interperiod_storage_capacity_data)
-            @constraint(model,
-                state_of_charge_inter[row.id, row.period]
-                ≥
-                row.min_storage_level * row.capacity_storage_energy
-                -
-                soc_band_under[row.id, row.period]
-            )
-            @constraint(model,
-                state_of_charge_inter[row.id, row.period]
-                ≤
-                row.max_storage_level * row.capacity_storage_energy
-                +
-                soc_band_over[row.id, row.period]
-            )
+        if inject_inflow
+            # Under injection the band is enforced *hard* on every seasonal asset × base
+            # period: the base-day conservation slacks (`soc_chain_spill`/`soc_chain_borrow`)
+            # are the recourse, so the hard band is always feasible, and — unlike the soft
+            # VOLL slack, which lets the level breach capacity pointwise without touching
+            # conservation — spill/borrow correct the mass ledger and therefore every
+            # downstream day at once, which is both cheaper and physically correct. The band
+            # covers all base periods (not only those with a reservoir-level profile), so the
+            # profile-less datasets get a real [0,1]·cap band instead of an unbounded level.
+            cap = Dict(string(r.id) => r.capacity_storage_energy
+                       for r in rows(run_query("SELECT id, capacity_storage_energy FROM seasonal_storage_assets")))
+            bounds = Dict{Tuple{String,Int},Tuple{Float64,Float64}}()
+            for row in rows(interperiod_storage_capacity_data)
+                bounds[(string(row.id), Int(row.period))] = (row.min_storage_level, row.max_storage_level)
+            end
+            for s in S_seas, d in D
+                mn, mx = get(bounds, (string(s), d), (0.0, 1.0))   # default [0,1] when no reservoir-level profile
+                @constraint(model, state_of_charge_inter[s, d] ≥ mn * cap[string(s)])
+                @constraint(model, state_of_charge_inter[s, d] ≤ mx * cap[string(s)])
+            end
+        else
+            # Historical soft band: the level may breach the band by paying the
+            # `cost_of_soc_band` penalty through the elastic slacks `soc_band_under` (below
+            # the lower level) and `soc_band_over` (above the upper level). The variable keeps
+            # its physical `≥ 0` floor (a deficit there is met by the intra-period `borrow`
+            # slack, never infeasible); only the band's min/max *levels* are relaxed. That is
+            # the single thing a conical prolongation can over-scale into infeasibility, so
+            # softening it makes the model feasible for any weight class while the exact
+            # penalty leaves feasible cells untouched. (No rows ⇒ no band at all, the prior
+            # behaviour for datasets without reservoir-level profiles.)
+            for row in rows(interperiod_storage_capacity_data)
+                @constraint(model,
+                    state_of_charge_inter[row.id, row.period]
+                    ≥
+                    row.min_storage_level * row.capacity_storage_energy
+                    -
+                    soc_band_under[row.id, row.period]
+                )
+                @constraint(model,
+                    state_of_charge_inter[row.id, row.period]
+                    ≤
+                    row.max_storage_level * row.capacity_storage_energy
+                    +
+                    soc_band_over[row.id, row.period]
+                )
+            end
         end
     end
 
