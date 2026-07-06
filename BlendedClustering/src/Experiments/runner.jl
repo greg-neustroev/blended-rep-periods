@@ -70,21 +70,29 @@ function run_experiments(
             # Read the dataset once per seed, but only when something still needs running.
             time_to_read = @elapsed read_data_from_dir(connection, joinpath(inputs_dir, data))
             for experiment_data in pending
-                model = Model(optimizer)
-                eval_model = Model(optimizer)
-                result, clustering_result = run_experiment(experiment_data, model, eval_model, connection, seed)
-                save_result_to_csv(output_file, result, time_to_read)
-                # Full primal solution + nodal-price duals for both the reduced and
-                # the full-horizon evaluation model (the latter is a no-op when the
-                # experiment skips evaluation, since it is then never solved). The
-                # reduced dump already includes state_of_charge_inter/_intra and
-                # invested_units, so no separate per-variable CSVs are written.
-                save_solution_to_arrow(model, outputs_dir, result.name, seed; kind="reduced")
-                save_solution_to_arrow(eval_model, outputs_dir, result.name, seed; kind="eval")
-                # Clustering-side artifacts (weights, assignment, selected RPs,
-                # spectrum, residuals, PGD/cache diagnostics) for offline analysis.
-                save_clustering_artifacts(clustering_result, outputs_dir, result.name, seed)
-                push!(completed, (result.name, seed))
+                # Isolate each experiment: a single degenerate arm (e.g. k-means asking for more
+                # representatives than the data has distinct day-shapes) must not abort the whole
+                # campaign. Log and move on; the arm stays out of `completed` so a later resume can
+                # retry it once the cause is fixed.
+                try
+                    model = Model(optimizer)
+                    eval_model = Model(optimizer)
+                    result, clustering_result = run_experiment(experiment_data, model, eval_model, connection, seed)
+                    save_result_to_csv(output_file, result, time_to_read)
+                    # Full primal solution + nodal-price duals for both the reduced and
+                    # the full-horizon evaluation model (the latter is a no-op when the
+                    # experiment skips evaluation, since it is then never solved). The
+                    # reduced dump already includes state_of_charge_inter/_intra and
+                    # invested_units, so no separate per-variable CSVs are written.
+                    save_solution_to_arrow(model, outputs_dir, result.name, seed; kind="reduced")
+                    save_solution_to_arrow(eval_model, outputs_dir, result.name, seed; kind="eval")
+                    # Clustering-side artifacts (weights, assignment, selected RPs,
+                    # spectrum, residuals, PGD/cache diagnostics) for offline analysis.
+                    save_clustering_artifacts(clustering_result, outputs_dir, result.name, seed)
+                    push!(completed, (result.name, seed))
+                catch err
+                    @warn "experiment failed; skipping" name=experiment_data.name seed exception=(err, catch_backtrace())
+                end
             end
         end
     end
