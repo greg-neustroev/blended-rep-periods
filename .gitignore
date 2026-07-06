@@ -43,3 +43,7 @@ aux_data
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Regenerable synthetic knob-study variants (python3 scripts/gen_synth_sensitivity.py study)
+inputs/synth/knobs/
+outputs/synth/

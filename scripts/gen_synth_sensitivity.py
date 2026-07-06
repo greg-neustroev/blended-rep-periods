@@ -179,20 +179,81 @@ def write_full_sweeps(base):
 
 
 def write_panel_sweep(path):
-    # Small panel spanning selections × weights: its regret SPREAD is the "method sensitivity"
-    # of a dataset. Used by the data-property knob sweeps (one panel per generated variant).
-    panel = [("conical_hull", "convex"), ("convex_hull", "convex"), ("conical_hull", "dirac"),
-             ("k_means", "dirac"), ("k_medoids", "convex"), ("chronological", "convex"),
-             ("convex_hull", "conical_bounded"), ("conical_hull", "conical")]
+    # Diagnostic panel (n_rp=10): arms chosen so PER-AXIS regret spread is computable for each
+    # dataset — the weight axis (conical_hull × 4 weights @ economic), the selection axis (6
+    # selections × convex @ economic), and the normalization axis (conical_hull/convex × 3 norms).
+    # Running it on each knob variant tells which METHOD axis a given DATA property moves.
     rows = [_HDR, f"1,{D*H},k_means,dirac,0.01,none,economic,1\n"]
-    for cl, w in panel:
-        rows.append(f"10,{H},{cl},{w},0.01,storage_regret,economic,1\n")
+    add = lambda cl, w, nrm: rows.append(f"10,{H},{cl},{w},0.01,storage_regret,{nrm},1\n")
+    for w in ["dirac", "convex", "conical", "conical_bounded"]:      # weight axis
+        add("conical_hull", w, "economic")
+    for cl in ["k_means", "k_medoids", "hierarchical", "chronological", "convex_hull"]:  # selection axis
+        add(cl, "convex", "economic")                               # (conical_hull/convex already above)
+    for nrm in ["unscaled", "minmax"]:                              # normalization axis
+        add("conical_hull", "convex", nrm)                          # (economic already above)
     open(path, "w").write("".join(rows))
 
 
+# Data-property study grid: one entry per (variant name, knobs), each varying ONE knob off the
+# baseline (β=60, renew=0.95, gas=30, everything else default). Grouped by the method axis the
+# knob is expected to move — β/reliance GATE all sensitivity; the rest each target one axis.
+STUDY = [
+    ("base",     {}),
+    # β — buffer horizon: gates the inter-period storage reconstruction.
+    ("beta2", dict(beta_days=2)), ("beta5", dict(beta_days=5)), ("beta15", dict(beta_days=15)),
+    ("beta30", dict(beta_days=30)), ("beta120", dict(beta_days=120)),
+    # reliance — storage throughput (gates whether reconstruction error costs).
+    ("renew40", dict(renew_share=0.40)), ("renew60", dict(renew_share=0.60)),
+    ("renew80", dict(renew_share=0.80)), ("renew100", dict(renew_share=1.00)),
+    # hull geometry of the residual-load cloud → WEIGHT class (convex vs conical vs bounded).
+    ("hull03", dict(hull_spread=0.3)), ("hull06", dict(hull_spread=0.6)), ("hull10", dict(hull_spread=1.0)),
+    # intrinsic dimensionality (# day archetypes) → SELECTION and n_rp.
+    ("reg3", dict(n_regimes=3)), ("reg6", dict(n_regimes=6)), ("reg12", dict(n_regimes=12)), ("reg30", dict(n_regimes=30)),
+    # cross-block feature scale → NORMALIZATION (economic vs unscaled vs minmax).
+    ("scale05", dict(scale_ratio=0.5)), ("scale2", dict(scale_ratio=2.0)), ("scale4", dict(scale_ratio=4.0)),
+    # noise → ROBUSTNESS (expect the ranking to be insensitive, the regret floor to rise).
+    ("noise10", dict(noise=0.1)), ("noise30", dict(noise=0.3)), ("noise60", dict(noise=0.6)),
+    # seasonal:diurnal amplitude → inter- vs intra-period stress.
+    ("sd03", dict(season_diurnal=0.3)), ("sd30", dict(season_diurnal=3.0)),
+]
+
+
+def write_study():
+    # Regenerate every study variant into the ignorable inputs/synth/knobs/ subdir, the shared
+    # diagnostic panel, and the consolidated config that runs the panel on all of them.
+    os.makedirs("inputs/synth/knobs", exist_ok=True)
+    for name, knobs in STUDY:
+        gen(f"inputs/synth/knobs/{name}", **knobs)
+    write_panel_sweep("inputs/synth/knobs/panel.csv")
+    hdr = (
+        "# Data-property sensitivity study. The diagnostic panel (per-axis method arms at\n"
+        "# n_rp=10) is run on synth/hydro variants that each vary ONE generator knob, so the\n"
+        "# per-axis regret spread of each variant says which METHOD axis that DATA property\n"
+        "# moves (β & reliance GATE everything; hull→weight, dimensionality→selection,\n"
+        "# scale→normalization, noise→robustness, season_diurnal→inter/intra). Regenerate the\n"
+        "# variant datasets first:  python3 scripts/gen_synth_sensitivity.py study\n"
+        "# (they live under the gitignored inputs/synth/knobs/, so they are not committed.)\n"
+        "inputs = [\n"
+    )
+    body = "".join(f'  {{ sweep = "synth/knobs/panel", data = "synth/knobs/{name}" }},\n'
+                   for name, _ in STUDY)
+    tail = (']\n'
+            'master_seed = 382507\n'
+            'n_seeds     = 1          # bump for k-means/k-medoids variance bars\n'
+            'solver      = "gurobi"\n'
+            'inputs_dir  = "../inputs"\n'
+            'outputs_dir = "../outputs"\n')
+    open("configs/synth_knobs.toml", "w").write(hdr + body + tail)
+
+
 if __name__ == "__main__":
-    info = gen("inputs/synth/hydro")                              # baseline dev dataset
-    write_full_sweeps("hydro")
-    print(f"baseline synth/hydro: solar_cap={info['SOLAR_CAP']:.1f} "
-          f"peak_inflow={[round(x,2) for x in info['peak_inflow']]} res_cap={[round(x) for x in info['RES_CAP']]}")
-    print("wrote inputs/synth/sens_hydro.csv (sensitivity) + inputs/synth/hydro.csv (ablation)")
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "study":
+        write_study()
+        print(f"study: generated {len(STUDY)} variants under inputs/synth/knobs/ + panel + configs/synth_knobs.toml")
+    else:
+        info = gen("inputs/synth/hydro")                          # baseline dev dataset
+        write_full_sweeps("hydro")
+        print(f"baseline synth/hydro: solar_cap={info['SOLAR_CAP']:.1f} "
+              f"peak_inflow={[round(x,2) for x in info['peak_inflow']]} res_cap={[round(x) for x in info['RES_CAP']]}")
+        print("wrote inputs/synth/sens_hydro.csv (sensitivity) + inputs/synth/hydro.csv (ablation)")

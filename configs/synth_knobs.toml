@@ -1,0 +1,39 @@
+# Data-property sensitivity study. The diagnostic panel (per-axis method arms at
+# n_rp=10) is run on synth/hydro variants that each vary ONE generator knob, so the
+# per-axis regret spread of each variant says which METHOD axis that DATA property
+# moves (β & reliance GATE everything; hull→weight, dimensionality→selection,
+# scale→normalization, noise→robustness, season_diurnal→inter/intra). Regenerate the
+# variant datasets first:  python3 scripts/gen_synth_sensitivity.py study
+# (they live under the gitignored inputs/synth/knobs/, so they are not committed.)
+inputs = [
+  { sweep = "synth/knobs/panel", data = "synth/knobs/base" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/beta2" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/beta5" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/beta15" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/beta30" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/beta120" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/renew40" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/renew60" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/renew80" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/renew100" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/hull03" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/hull06" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/hull10" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/reg3" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/reg6" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/reg12" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/reg30" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/scale05" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/scale2" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/scale4" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/noise10" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/noise30" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/noise60" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/sd03" },
+  { sweep = "synth/knobs/panel", data = "synth/knobs/sd30" },
+]
+master_seed = 382507
+n_seeds     = 1          # bump for k-means/k-medoids variance bars
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"
