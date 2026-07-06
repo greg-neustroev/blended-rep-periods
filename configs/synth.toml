@@ -7,7 +7,7 @@
 # solution's reconstructed seasonal-storage trajectory drives deployed cost and the clustering ×
 # weight × normalization × tol choices actually move the regret. Small (1 node, ~6 assets,
 # 120 days × 24 h = 2880 steps) so the full sensitivity sweep runs fast. Regenerate with
-# `python3 aux_data/gen_synth_sensitivity.py`.
+# `python3 scripts/gen_synth_sensitivity.py` (run from the repo root).
 #
 # Two sweeps write to the synth/hydro namespace:
 #   - inputs/synth/sens_hydro.csv : sensitivity — every clustering type (incl. the dominated
