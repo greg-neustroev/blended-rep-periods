@@ -67,18 +67,11 @@ function create_optimization_model!(connection, model, clustering_result; inject
         rp_weight = sum(clustering_result.weight_matrix, dims=1)
         rp_weight .*= operations_weight
 
-        # The inter-period storage chain reconstructs each base period's seasonal
-        # storage *increment* from the representatives — the "prolongation" role of the
-        # weights. When a separate signed chain matrix W^ch was fit (chain split), it is
-        # used for those increment dynamics (2i′/2j′); the objective/aggregation
-        # (rp_weight above) and the inter-period ramping keep the operational W^op
-        # (`weight_matrix`). With no split the chain reuses `weight_matrix`, exactly the
-        # historical single-matrix model. Both matrices share `rp_matrix`/`R`, so they
-        # are indexed identically.
-        chain_split = clustering_result.chain_weight_matrix ≢ nothing
-        chain_weight_matrix = chain_split ?
-                              clustering_result.chain_weight_matrix :
-                              clustering_result.weight_matrix
+        # The inter-period storage chain reconstructs each base period's seasonal storage
+        # *increment* from the representatives (the "prolongation" role of the weights),
+        # using the operational weight matrix — the same weights that drive the
+        # objective/aggregation (`rp_weight`) and the inter-period ramping.
+        weight_matrix = clustering_result.weight_matrix
         # Exact-inflow injection is a multi-period *reconstruction* device: it only bites when
         # a chain of base periods is rebuilt from fewer representatives. A single base period
         # (the n_rp=1 reference optimum and the full-horizon evaluation model) has no chain to
@@ -436,7 +429,7 @@ function create_optimization_model!(connection, model, clustering_result; inject
         # Under injection the base-day conservation slacks close the ledger at base-day
         # resolution: spill removes over-accumulated inflow, borrow supplies a shortfall.
         increment(s, d) = sum(
-            chain_weight_matrix[d, r]
+            weight_matrix[d, r]
             *
             (state_of_charge_intra[s, r, H[end]] - state_of_charge_intra_0[s, r]
              - (inject_inflow ? ebar(s, r) : 0.0))
@@ -470,22 +463,16 @@ function create_optimization_model!(connection, model, clustering_result; inject
         initial_storage_data = run_query("SELECT * FROM initial_storage_constraint_view")
         for row in rows(initial_storage_data)
             @constraint(model, state_of_charge_inter_0[row.id] == row.initial_storage_level)
-            # The end-of-horizon tether σ^inter_D = S^0 does two jobs that the single
-            # matrix fuses: cyclic closure, and gauge-fixing the per-RP additive freedom
-            # in σ^intra,0. Under the chain split both are already covered without an
-            # absolute reconstruction: column-sum-zero W^ch telescopes the increment
-            # dynamics to σ^inter_D = σ^inter_0 for *any* dispatch (closure, with the
-            # cyclic constraint above + the S^0 pin), and the σ^intra,0 gauge couples to
-            # no observable (σ^inter, slacks, and cost all depend only on the increments).
-            # A signed W^ch cannot carry an absolute level anyway, so the reconstruction
-            # is dropped — it is not made feasible, it is made unnecessary. The single-
-            # matrix model keeps it (its partition-of-unity weights both close the cycle
-            # and reconstruct S^0); that is the special case, not the general routing.
-            # Exact-inflow injection makes the chain increment-only in the same way, so it
-            # drops the clause too (the σ^intra,0 gauge then couples to no observable — the
-            # objective, σ^inter and slacks all depend only on the increments — leaving it
-            # free, exactly as under the chain split).
-            if !chain_split && !inject_inflow
+            # The end-of-horizon tether σ^inter_D = S^0 does two jobs the single-matrix chain
+            # fuses: cyclic closure, and gauge-fixing the per-RP additive freedom in σ^intra,0.
+            # Its partition-of-unity weights both close the cycle and reconstruct S^0, so the
+            # historical (non-injected) model keeps this absolute-reconstruction clause. Exact-
+            # inflow injection makes the chain increment-only: column-sum closure telescopes the
+            # increment dynamics to σ^inter_D = σ^inter_0 for *any* dispatch (with the cyclic
+            # constraint above + the S^0 pin), and the σ^intra,0 gauge then couples to no
+            # observable (σ^inter, slacks and cost depend only on the increments), so the clause
+            # is dropped — not made feasible, made unnecessary.
+            if !inject_inflow
                 @constraint(model,
                     state_of_charge_inter[row.id, D[end]]
                     ==
