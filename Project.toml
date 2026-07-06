@@ -1,4 +1,5 @@
 [deps]
+Arrow = "69666777-d1a9-59fb-9406-91d4454c9d45"
 BlendedClustering = "c351942f-72a9-42a5-b07d-a097b9403a5d"
 CSV = "336ed68f-0bac-5ca0-87d4-7b16caf5d00b"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
