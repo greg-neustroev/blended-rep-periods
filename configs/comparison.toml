@@ -5,8 +5,9 @@
 # is run, at the economic normalization (normalization × tol robustness lives in the synth/hydro
 # sensitivity study), over n_rp ∈ {5,10,20,40,80}. GEP is investment; the rest are storage
 # graded day-exact (fix_every=1) with exact-inflow injection on by default. 24 combos × 5 RP =
-# 120 arms/dataset — a large run. (convex_hull_with_null is excluded: it is dominated by the
-# other hull geometries on every weight — see the synth/hydro sensitivity study.)
+# 120 arms/dataset — a large run. (convex_hull_with_null is excluded from the comparison to
+# bound combo count: it is dominated on the synth dev system yet competitive on P2X, and never
+# strictly best on either — a dataset-dependent behavior the synth/hydro sensitivity study maps.)
 #
 # Only k-means/k-medoids are seed-sensitive; n_seeds = 3 (set 1 for a quick first pass, more for
 # variance bars). The non-k-means/medoids combos are deterministic across seeds.

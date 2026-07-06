@@ -1,6 +1,6 @@
 id,location,technology,unit_capacity,initial_units
-Hydro1,1,Hydro1,40.0,1
-Hydro2,1,Hydro2,40.0,1
-Hydro3,1,Hydro3,40.0,1
-Solar,1,Solar,71.31717,1
-Gas,1,Gas,150.0,1
+Hydro1,1,Hydro1,60.0,1
+Hydro2,1,Hydro2,60.0,1
+Hydro3,1,Hydro3,60.0,1
+Solar,1,Solar,91.47968,1
+Gas,1,Gas,130.00000,1
