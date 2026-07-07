@@ -435,9 +435,14 @@ function greedy_convex_hull(
     furthest_vector_index = nothing
     hull_matrix = matrix[:, hull_indices]
     projection_matrix = pinv(hull_matrix)
-    # Principled PGD step size: 1 / L with L = σ_max(hull_matrix)^2, the
-    # Lipschitz constant of the projection objective's gradient.
-    step_size = 1 / opnorm(hull_matrix, 2)^2
+    # Precompute the Gram matrix once per outer iteration and reuse it for every
+    # candidate's projection gradient: G w − Rᵀc_d costs O(n_rp²) per PGD step
+    # instead of two matmuls against the tall hull matrix (O(|features|·n_rp)).
+    # Principled PGD step size: eigmax(G) = σ_max²(hull_matrix) = L, so α = 1/L
+    # exactly as before.
+    gram = Symmetric(hull_matrix' * hull_matrix)
+    step_size = 1 / eigmax(gram)
+    grad_buf = Vector{Float64}(undef, length(hull_indices))
     last_added_vector = matrix[:, last(hull_indices)]
     iter_hits = 0
     iter_misses = 0
@@ -455,7 +460,10 @@ function greedy_convex_hull(
         d = cached[2]
         iter_hits += 1
       else
-        gradient = x -> hull_matrix' * (hull_matrix * x - target_vector)
+        b = hull_matrix' * target_vector
+        gradient = let gram = gram, b = b, grad_buf = grad_buf
+          w -> (mul!(grad_buf, gram, w); grad_buf .-= b; grad_buf)
+        end
         x = projection_matrix * target_vector
         x, _ = projected_gradient_descent!(x; gradient, projection=project_onto_simplex, learning_rate=step_size, tol)
         projected_target = hull_matrix * x

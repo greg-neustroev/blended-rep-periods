@@ -102,25 +102,35 @@ const PGD_MAX_ITERS = 100_000
 """
   projected_gradient_descent!(x; gradient, projection, tol, learning_rate)
 
-Fits `x` using the projected gradient descent scheme.
+Fits `x` by accelerated projected gradient descent (FISTA with adaptive restart).
 
-`tol` is the resolution to which the components of `x` are determined: the
-algorithm iterates until no component moves by more than `tol` between steps, i.e.
-the solution has settled to within the precision that is kept downstream (anything
-finer is discarded). No iteration count is imposed; the loop is bounded only by the
-numerical backstop `PGD_MAX_ITERS`.
+Minimizes a smooth convex objective over the feasible set defined by `projection`,
+starting from `x`. The iteration uses Nesterov extrapolation, which reaches a target
+accuracy in `O(√κ·log(1/ε))` iterations — with `κ = σ_max²/σ_min²` the condition
+number of the objective's Hessian — versus `O(κ·log(1/ε))` for un-accelerated PGD.
+That is a quadratic-to-linear improvement in the conditioning, which is exactly the
+factor that blows up as the number of representative periods (and hence the near
+collinearity of the RP columns) grows. O'Donoghue–Candès gradient restart recovers
+the linear rate on the locally active face without needing the strong-convexity
+constant `μ`, so the method stays parameter-free: the callers still pass only `α=1/L`.
+
+`tol` is the resolution to which `x` is determined: the loop stops once the
+projected-gradient mapping residual satisfies `‖G(x)‖₂ ≤ tol` at a *feasible* iterate
+(a genuine first-order optimality certificate, checked as
+`‖x − proj(x − α·g(x))‖₂ ≤ tol·α`). A cheap consecutive-move test gates that check so
+the one extra gradient it costs is only paid near convergence. Certifying at a
+feasible point — rather than at the extrapolated point — keeps the returned
+projection accurate enough for the greedy-hull cache certificate (Lemma 1) to stay
+sound. No iteration count is imposed; the loop is bounded only by the numerical
+backstop `PGD_MAX_ITERS`.
 
 The arguments:
 
   - `x`: the value to fit
-  - `gradient`: the gradient operator, that is, a function that takes
-    vectors of the same shape as `x` as inputs and returns a gradient of the
-    loss at that point; the fitting is done to minimize the corresponding
-    implicit loss
-  - `projection`: the projection operator, that is, a function that, given a
-    vector `x`, finds a point within some subspace that is closest to `x`
-  - `tol`: the resolution; the algorithm stops once no component of `x` changes
-    by more than `tol` in an iteration
+  - `gradient`: the gradient operator, a function taking vectors of the same shape as
+    `x` and returning the gradient of the (implicit) loss at that point
+  - `projection`: the Euclidean projection onto the feasible set
+  - `tol`: the resolution / first-order optimality tolerance (see above)
   - `learning_rate`: the step size `α` (the callers set it to `1/L` per instance)
 
 Returns the tuple `(x, iterations)`: the fitted point and the number of iterations
@@ -133,28 +143,43 @@ function projected_gradient_descent!(
   tol::Float64=1e-2,
   learning_rate::Float64=1e-3,
 )
-  # It is possible that the initial guess is not in the required subspace;
-  # project it first.
+  α = learning_rate
+  # The initial guess may lie outside the feasible set; project it first. `x` always
+  # holds the latest feasible iterate; `y` is the (possibly infeasible) extrapolation
+  # point at which the gradient is evaluated.
   x = projection(x)
-
-  # Certified stop (paper's Algorithm 2): the projected-gradient mapping residual
-  # ‖x − x_new‖₂ equals α·‖G(x)‖₂, so stopping at ‖x − x_new‖₂ ≤ tol·α certifies
-  # ‖G(x)‖₂ ≤ tol. Scaling by the step size α keeps the projections accurate
-  # enough for the greedy-hull cache certificate (Lemma 1) to stay sound — a flat
-  # ∞-norm move threshold is too coarse at the resolutions we use.
-  threshold = tol * learning_rate
+  y = copy(x)
+  t = 1.0
+  # Certified stop: at a feasible iterate the projected-gradient mapping residual is
+  # ‖x − proj(x − α·g(x))‖₂ = α·‖G(x)‖₂, so ‖…‖₂ ≤ tol·α certifies ‖G(x)‖₂ ≤ tol.
+  threshold = tol * α
   iterations = 0
   for _ ∈ 1:PGD_MAX_ITERS
     iterations += 1
-    g = gradient(x)              # find the gradient
-    y = x .- learning_rate .* g  # gradient step, may leave the domain
-    x_new = projection(y)        # projection step, return to the domain
-
-    converged = norm(x_new .- x) ≤ threshold  # ‖projected-gradient mapping‖₂ ≤ tol
-    x = x_new
-    if converged
-      break
+    g = gradient(y)
+    x_new = projection(y .- α .* g)          # accelerated gradient + projection step
+    # Adaptive restart (O'Donoghue–Candès): if the momentum (x_new − x) points against
+    # the projected descent step (y − x_new), the extrapolation is overshooting. Drop
+    # the momentum and retake the step from the feasible iterate x.
+    if dot(y .- x_new, x_new .- x) > 0
+      y = x
+      g = gradient(y)
+      x_new = projection(y .- α .* g)
+      t = 1.0
     end
+    # First-order optimality certificate at the feasible iterate x_new, gated by the
+    # cheap consecutive-move test so the extra gradient is only paid near convergence.
+    converged = false
+    if norm(x_new .- x) ≤ threshold
+      g_cert = gradient(x_new)
+      converged = norm(projection(x_new .- α .* g_cert) .- x_new) ≤ threshold
+    end
+    # Nesterov extrapolation for the next iterate.
+    t_next = (1.0 + sqrt(1.0 + 4.0 * t^2)) / 2.0
+    y = x_new .+ ((t - 1.0) / t_next) .* (x_new .- x)
+    x = x_new
+    t = t_next
+    converged && break
   end
   # Return the realized iteration count alongside the fitted point so callers can
   # record the observed N(ε) without imposing it.
@@ -232,9 +257,18 @@ function fit_rep_period_weights!(
     col .= projection(col)
   end
 
-  # Principled PGD step size: 1 / L with L = σ_max(rp_matrix)^2, the Lipschitz
-  # constant of the projection objective's gradient.
-  step_size = 1 / opnorm(rp_matrix, 2)^2
+  # Precompute the Gram matrix G = RᵀR and the projected targets B = RᵀC once and
+  # reuse them for every base period. The gradient R ᵀ(R w − c_d) = G w − B[:,d] is
+  # then a single n_rp×n_rp matvec (O(n_rp²)) instead of two matmuls against the tall
+  # R (O(|features|·n_rp) each); since |features| ≫ n_rp this is the dominant
+  # per-iteration saving, and the same G/B are shared across all base periods.
+  # Principled PGD step size: eigmax(G) = σ_max²(R) = L is the Lipschitz constant of
+  # the objective's gradient, so α = 1/L exactly as before (now read off the small
+  # n_rp×n_rp Gram matrix rather than an SVD of the tall R).
+  gram = Symmetric(rp_matrix' * rp_matrix)
+  projected_targets = rp_matrix' * clustering_matrix
+  step_size = 1 / eigmax(gram)
+  grad_buf = Vector{Float64}(undef, size(gram, 1))
 
   # Record per-fit PGD iteration counts (one entry per base period that is
   # actually fitted, i.e. not already within `tol`), so the observed N(ε) range
@@ -244,7 +278,10 @@ function fit_rep_period_weights!(
   for period ∈ 1:n_periods
     target_vector = clustering_matrix[:, period]
     x = projection(initial_weight_matrix[:, period])
-    gradient = x -> rp_matrix' * (rp_matrix * x - target_vector)
+    b = view(projected_targets, :, period)
+    gradient = let gram = gram, b = b, grad_buf = grad_buf
+      w -> (mul!(grad_buf, gram, w); grad_buf .-= b; grad_buf)
+    end
     initial_projection_eror = norm(rp_matrix * x - target_vector)
     if initial_projection_eror ≤ tol
       continue  # already reconstructed within the resolution; keep the initial weights
