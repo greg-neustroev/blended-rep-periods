@@ -96,7 +96,7 @@ sweep (one experiment per row), and the experiments run for every random seed.
 
 ```toml
 # case_studies.toml
-inputs = ["tyndp/gep", "tyndp/p2x", "sienna/5bus", "sienna/118bus", "gridmod/rts"]
+inputs = ["tyndp/gep", "tyndp/p2x", "sienna/5bus", "nrel/118bus", "gridmod/rts"]
 
 # Draw n_seeds seeds from 1:seed_max, reproducibly:
 #   Random.seed!(master_seed); rand(1:seed_max, n_seeds)

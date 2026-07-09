@@ -234,7 +234,7 @@ end
 
 function main()
     files = isempty(ARGS) ? ["outputs/tyndp/gep.csv", "outputs/tyndp/p2x.csv",
-        "outputs/sienna/118bus.csv", "outputs/sienna/5bus.csv", "outputs/gridmod/rts.csv"] : ARGS
+        "outputs/nrel/118bus.csv", "outputs/sienna/5bus.csv", "outputs/gridmod/rts.csv"] : ARGS
     found = false
     for f in files
         if isfile(f); found = true; summarize_file(f)

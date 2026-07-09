@@ -1,6 +1,8 @@
-# Sienna 5-bus — held-out comparison (small illustrative storage network). Full clustering ×
-# weight matrix (28 combos) at economic, n_rp ∈ {10,20,40,80}; also part of comparison.toml.
-# storage_regret day-exact.
+# Sienna 5-bus GEP — held-out comparison (small illustrative GENERATION-EXPANSION network).
+# Greenfield: the 8 generators are investable (initial_units=0), storage + ENS fixed. Full
+# clustering × weight matrix (28 combos) at BOTH economic and unscaled (56 combos), n_rp ∈
+# {10,20,40,80}; also part of comparison.toml. investment_regret. Only k-means/k-medoids are
+# seed-sensitive.
 inputs = ["sienna/5bus"]
 master_seed = 382507
 n_seeds     = 5

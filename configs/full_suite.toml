@@ -1,10 +1,13 @@
 # Full revision campaign, cheap → expensive. Held-out methodology:
 #   development (synth/hydro): sensitivity (clustering × weight × normalization × tol) + ablation
 #                              + the data-property knob study (one-knob-at-a-time variants)
-#   held-out comparison (5-bus / 118-bus / P2X / GEP): full clustering × weight matrix at economic
+#   held-out comparison (5-bus GEP / 118-bus / P2X / GEP): full clustering × weight matrix at
+#                              economic AND unscaled (minmax dropped — dominated). GEP + 5bus
+#                              are investment; P2X + 118-bus are storage. 118-bus is a near-
+#                              degenerate large-scale dispatch control (~0.1% regret every method).
 #   large-scale (RTS, last): reduced comparison + RP scaling into the hundreds
 #
-# Only k-means/k-medoids are seed-sensitive; the comparison is 112 arms/dataset. Stop before RTS
+# Only k-means/k-medoids are seed-sensitive; the comparison is 224 arms/dataset. Stop before RTS
 # if time is short — everything earlier is useful. The knob-study variant datasets are gitignored,
 # so REGENERATE them before running this config:  python3 scripts/gen_synth_sensitivity.py study
 inputs = [
@@ -36,11 +39,12 @@ inputs = [
   { sweep = "synth/knobs/panel", data = "synth/knobs/noise60" },
   { sweep = "synth/knobs/panel", data = "synth/knobs/sd03" },
   { sweep = "synth/knobs/panel", data = "synth/knobs/sd30" },
-  "sienna/5bus",                                          # comparison    (held out)
-  "sienna/118bus",                                        # comparison    (held out)
-  "tyndp/p2x",
+  # comparison (held out)
+  "sienna/5bus",  
   "tyndp/gep",
-  "gridmod/rts",                                          # large-scale   (last)
+  "tyndp/p2x",
+  "nrel/118bus",  
+  "gridmod/rts",
 ]
 master_seed = 382507
 n_seeds     = 5

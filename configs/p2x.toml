@@ -1,7 +1,8 @@
 # P2X dispatch (European, storage) — held-out comparison, run individually. Full clustering ×
-# weight matrix (28 combos) at economic, n_rp ∈ {10,20,40,80}; also part of comparison.toml.
-# storage_regret graded day-exact. Only
-# k-means/k-medoids are seed-sensitive.
+# weight matrix (28 combos) at BOTH economic and unscaled (56 combos), n_rp ∈ {10,20,40,80}; also
+# part of comparison.toml. storage_regret graded day-exact. Ablation finding: on P2X (storage),
+# economic narrowly wins regret and is no slower at low n_rp — consistent with synth; both are
+# carried for the comparison. Only k-means/k-medoids are seed-sensitive.
 inputs = ["tyndp/p2x"]
 master_seed = 382507
 n_seeds     = 5

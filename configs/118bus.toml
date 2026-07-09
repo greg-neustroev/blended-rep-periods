@@ -1,9 +1,11 @@
-# Sienna 118-bus (storage, larger non-TYNDP network) — held-out comparison, run individually.
-# Full clustering × weight matrix (28 combos) at economic, n_rp ∈ {10,20,40,80}; also part
-# of comparison.toml. storage_regret day-exact. Its ~300 generators make the clustering matrix
-# tall, so its runtime breakdown is
-# the most informative among the 365-period systems. Only k-means/k-medoids are seed-sensitive.
-inputs = ["sienna/118bus"]
+# NREL-118 (storage, larger non-TYNDP network) — held-out comparison, run individually.
+# Rebased on the primary NREL PLEXOS source (merit order restored; see inputs/nrel/118bus/README.md).
+# Full clustering × weight matrix (28 combos) at economic + unscaled, n_rp ∈ {10,20,40,80}; also
+# part of comparison.toml. storage_regret day-exact. Its ~300 generators make the clustering matrix
+# tall, so its runtime breakdown is the most informative among the 365-period systems. It is a
+# near-degenerate large-scale dispatch control (~0.04% regret every method — genuine physics, the
+# seasonal hydro is only 3% of demand). Only k-means/k-medoids are seed-sensitive.
+inputs = ["nrel/118bus"]
 master_seed = 382507
 n_seeds     = 5
 solver      = "gurobi"
