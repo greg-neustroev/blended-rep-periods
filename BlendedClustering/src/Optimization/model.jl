@@ -123,11 +123,12 @@ function create_optimization_model!(connection, model, clustering_result)
         # and add them if there are any
         @expression(model, cost_of_investment, AffExpr(0.0))
         investment_cost_data = run_query("SELECT * FROM investment_cost_objective_view")
-        if !isempty(investment_cost_data)
-            cost_of_investment += sum([
-                row.cost * row.unit_capacity * invested_units[row.id]
-                for row in rows(investment_cost_data)
-            ])
+        # Mutate the *registered* expression in place (like every other cost term below).
+        # A rebinding `cost_of_investment += …` would leave `model[:cost_of_investment]` at
+        # zero, so the objective would be correct but the reported capex component (read via
+        # `value(model[:cost_of_investment])`) would spuriously record 0.
+        for row in rows(investment_cost_data)
+            add_to_expression!(cost_of_investment, row.cost * row.unit_capacity, invested_units[row.id])
         end
 
         # Operations, spillage and borrow costs are accumulated in a single pass
