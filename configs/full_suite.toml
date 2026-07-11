@@ -2,12 +2,14 @@
 #   development (synth/hydro): sensitivity (clustering × weight × normalization × tol) + ablation
 #                              + the data-property knob study (one-knob-at-a-time variants)
 #   held-out comparison (5-bus GEP / 118-bus / P2X / GEP): full clustering × weight matrix at
-#                              economic AND unscaled (minmax dropped — dominated). GEP + 5bus
-#                              are investment; P2X + 118-bus are storage. 118-bus is a near-
-#                              degenerate large-scale dispatch control (~0.1% regret every method).
+#                              unscaled (economic dropped — coincides with unscaled here; minmax
+#                              dominated). Dichotomy: GEP+5bus are investment (discriminate on the
+#                              CLUSTERING axis — hull wins); P2X+118-bus are storage (discriminate
+#                              on the WEIGHT axis — blended weights win). nrel/118-bus is the
+#                              large-scale storage case (high-renewable decarbonization scenario).
 #   large-scale (RTS, last): reduced comparison + RP scaling into the hundreds
 #
-# Only k-means/k-medoids are seed-sensitive; the comparison is 224 arms/dataset. Stop before RTS
+# Only k-means/k-medoids are seed-sensitive; the comparison is 112 arms/dataset. Stop before RTS
 # if time is short — everything earlier is useful. The knob-study variant datasets are gitignored,
 # so REGENERATE them before running this config:  python3 scripts/gen_synth_sensitivity.py study
 inputs = [

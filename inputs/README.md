@@ -98,26 +98,24 @@ optimum never sheds load or borrows.
   three orders of magnitude across clustering/weight/normalization (≈1% for hull
   selection to >1000% for k-means at n_rp=10). It is the small, illustrative expansion
   case, and mirrors the held-out TYNDP gep (hull selection wins; unscaled beats economic).
-- **118bus** — the NREL-118 system (Peña–Martinez-Anido–Hodge 2018), run as **operational
-  storage dispatch** and kept faithful to the source rather than reframed as expansion. It is
-  rebased on the **primary NREL PLEXOS input files** (see `nrel/118bus/README.md`): the
-  merit order is restored directly from the source — per-fuel prices (coal 1.8, natural gas
-  5.4, biomass 2.4 $/MMBTU) and the multi-band incremental heat rates, combined into a single
-  block LP `variable_cost` = capacity-weighted-average incremental heat rate × fuel price +
-  VO&M. This gives a correctly ordered, steep supply curve (geothermal ≈ 3, coal/steam ≈
-  21–60, combined-cycle gas ≈ 29–60, peaking gas turbines up to ≈ 233 $/MWh), replacing the
-  flattened single-price / band-1-only costs of the earlier Sienna conversion. Topology, line
-  limits, capacities and the load/VRE/hydro profile shapes are inherited from that conversion,
-  which matches the primary source generator-for-generator (all 312 units). The 15 dispatchable
-  hydro units are modelled as seasonal storage (monthly inflow), the 28 non-dispatchable ones
-  as generation; firm thermal ≈ 17.3 GW equals the 17.3 GW coincident peak, VRE is ~11% of
-  capacity, and the dispatch is gas-dominated. NOTE: even with the corrected merit order,
-  118bus is a **near-degenerate large-scale control** — every method lands within ~0.04%
-  storage regret. This is genuine physics, not a conversion artifact: the seasonal hydro
-  carries only 2.56 TWh/yr (~3% of the 96 TWh demand, 2–5% capacity factor), so there is no
-  strong inter-period storage coupling for period selection to get wrong. It is retained as
-  the large-scale negative control; storage discrimination is carried by `tyndp/p2x` and the
-  synthetic development system.
+- **118bus** — the NREL-118 system (Peña–Martinez-Anido–Hodge 2018), rebased on the
+  **primary NREL PLEXOS input files** and posed as a **high-renewable decarbonization storage
+  scenario** (see `nrel/118bus/README.md` for the full derivation). The merit order is first
+  restored directly from the source — per-fuel prices and capacity-weighted multi-band
+  incremental heat rates — replacing the earlier Sienna conversion's flattened single-price /
+  band-1-only costs. Source-faithful, the system is temporally non-discriminating (firm
+  thermal ≈ peak, seasonal hydro ~3% of demand, cheap gas backstop → every method within
+  ~0.05% regret — genuine physics). So the fleet is placed in a coherent decarbonization
+  scenario that makes seasonal storage pivotal: a **$100/t CO₂ price** (from the source
+  emission rates), **renewables ×6** (27 GW; the dataset's stated high-penetration purpose),
+  the **fossil fleet halved** (firm capacity below peak → scarcity), and the seasonal
+  reservoirs turned into **enlarged pumped storage** (7.7 TWh, chargeable, 81% round-trip).
+  With storage now binding, discrimination appears on the **weight axis**: `dirac` weights
+  give ~3.5% storage regret, blended (`convex`) weights ~1%, and the clustering method is a
+  wash — mirroring `tyndp/p2x` and complementing the generation-expansion cases (`tyndp/gep`,
+  `sienna/5bus`), where discrimination instead lives on the *clustering* axis. It is the
+  large-scale demonstration that blended representative-period weights are essential for
+  storage-coupled operation.
 - **rts** — converted from gridmod/rts-gmlc. Hydro reservoirs and CSP are seasonal
   storage (inflow-only); the battery is short-term storage. `timestep_duration` is
   5/60 h.

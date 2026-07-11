@@ -6,8 +6,13 @@
 # The file is classified by whether it carries multiple tolerances at n_rp=10 (sensitivity).
 #
 # Sections printed as applicable:
-#   COMPARISON  — regret (%) vs n_rp, one row per clustering × weight combo (mean ± std/seeds).
-#   ABLATION    — PROPOSED vs each single-component knockout, regret (%) vs n_rp.
+#   COMPARISON  — regret (%) + total time (s), clustering (rows) × weight (cols), one table per
+#                 (normalization, n_rp) group (mean ± std over seeds). Within each group the
+#                 lowest-mean-regret cell is bold, along with every cell that is reasonable to use —
+#                 i.e. NOT both meaningfully worse (mean regret beyond the equivalence margin) AND
+#                 statistically worse (paired t-test p<ALPHA). The margin keeps reliable near-ties;
+#                 the t-test drops noisy methods whose big mean gap survives their spread.
+#   ABLATION    — PROPOSED vs each single-component knockout, regret (%) + total time (s) vs n_rp (bold = reasonable per n_rp).
 #   SECONDARY   — curtailment, infeasibility (borrow), feasibility (max ΣW), cost split.
 #   CAPACITY    — (investment) ‖Δ invested_units‖₁ vs the full-horizon optimum.
 #   RUNTIME     — per-stage timing + realized PGD iterations N(ε) + cache hit-rate (PROPOSED).
@@ -21,39 +26,187 @@
 
 using CSV, DataFrames, Printf, Statistics
 using Arrow
+using HypothesisTests
 
 const METHOD_ORDER = ["k_means", "k_medoids", "hierarchical", "chronological", "convex_hull", "convex_hull_with_null", "conical_hull"]
-const WEIGHT_ORDER = ["dirac", "convex", "conical", "conical_bounded"]
-const PROPOSED = ("conical_hull", "convex")   # marked with * in the tables
+const WEIGHT_ORDER = ["dirac", "convex", "conical_bounded", "conical"]   # displayed: dirac, convex, subunit, conical
+const NORM_ORDER = ["economic", "unscaled", "minmax"]
+const PROPOSED = ("conical_hull", "convex")   # the method whose runtime/secondary metrics are reported
+const HULL = ("convex_hull", "convex_hull_with_null", "conical_hull")          # the blended-hull family
+const CONVENTIONAL = ("k_means", "k_medoids", "hierarchical", "chronological")  # the baselines it competes with
 
-# mean ± std of `col` over rows, as a fixed-width percentage cell.
-function cell(sub, col)
-    vals = collect(skipmissing(sub[!, col]))
-    isempty(vals) && return "-"
-    m = mean(vals)
-    length(vals) > 1 && std(vals) > 1e-9 ? @sprintf("%.1f±%.1f", m, std(vals)) : @sprintf("%.1f", m)
+# Fixed field widths so wide cells never break alignment. Each n_rp splits into a regret and a
+# time sub-column; the label holds the longest combo "convex_hull_0 / subunit" (23 chars).
+const LABELW = 28
+const REGW = 14    # regret sub-column; widest cell "441.1±138.5%"
+const TIMEW = 13   # time sub-column;   widest cell "146.7±20.0s"
+# stages that sum to the reported total time (matches the RUNTIME breakdown below).
+const TIME_STAGES = (:time_to_cluster, :time_to_fit_weights, :time_to_solve)
+
+# Shorter display names for two verbose category labels (the data keys are unchanged).
+const DISPLAY = Dict("convex_hull_with_null" => "convex_hull_0", "conical_bounded" => "subunit")
+disp(x) = get(DISPLAY, x, x)
+combo_label(cl, w) = "$(disp(cl)) / $(disp(w))"
+
+# normalizations present in `df`, in canonical order, with any unrecognized ones appended.
+function ordered_norms(df)
+    norms = [nrm for nrm in NORM_ORDER if any(df.normalization .== nrm)]
+    append!(norms, sort(unique(df.normalization[.!in.(df.normalization, Ref(NORM_ORDER))])))
+    return norms
 end
+
 getcol(r, c) = hasproperty(r, c) ? r[!, c] : fill(missing, nrow(r))
 
-# regret (%) matrix: rows = clustering × weight combos present, cols = n_rp.
+# mean of `col` over rows (nothing if empty), and its std as a "±x" suffix when >1 seed.
+function meanstd(sub, col)
+    vals = collect(skipmissing(getcol(sub, col)))
+    isempty(vals) && return (nothing, "")
+    (mean(vals), length(vals) > 1 && std(vals) > 1e-9 ? @sprintf("±%.1f", std(vals)) : "")
+end
+
+# regret / total-time cells, each "mean ± std over seeds"; "-" when there is no matching row.
+regret_cell(sub) = ((m, s) = meanstd(sub, :regret_pct); m === nothing ? "-" : @sprintf("%.1f%s%%", m, s))
+time_cell(sub)   = ((m, s) = meanstd(sub, :total_time); m === nothing ? "-" : @sprintf("%.1f%ss", m, s))
+
+# Significance level for the paired t-test. Raised to 0.10 (from the usual 0.05) because there are
+# only ~5 seeds per cell: at that sample size the test has little power, so a stricter α would fail
+# to flag all but the most extreme differences. 0.10 trades a higher false-positive rate for the
+# ability to actually distinguish methods given the few runs we have.
+const ALPHA = 0.1
+const MARGIN_ABS = 1.0    # practical-equivalence margin on regret (percentage points), and
+const MARGIN_REL = 0.25   # as a fraction of the best regret; the larger of the two is used.
+
+# per-seed regret and time samples for a cell, keyed by seed so two cells sharing a seed set
+# can be paired; nothing when the cell has no evaluated regret.
+function samples(sub)
+    isempty(sub) && return nothing
+    reg = Dict(r.seed => r.regret_pct for r in eachrow(sub) if !ismissing(r.regret_pct))
+    isempty(reg) && return nothing
+    tim = Dict(r.seed => r.total_time for r in eachrow(sub) if !ismissing(r.total_time))
+    (; reg, tim)
+end
+
+# the two value-vectors of `a` and `b` restricted to their shared seeds, in a common order.
+function paired(a, b)
+    ks = sort(collect(intersect(keys(a), keys(b))))
+    ([a[k] for k in ks], [b[k] for k in ks])
+end
+
+# one-sided paired t-test p that sample `y` is worse (larger regret) than `x`: p that mean(y-x)>0.
+# Unlike a rank test it weighs the magnitude of each per-seed difference, so it stays decisive at
+# n=5. Returns 1.0 (no evidence) when the samples are tied or empty.
+function worse_pvalue(x, y)
+    d = y .- x
+    (length(d) < 2 || all(iszero, d)) && return 1.0
+    pvalue(OneSampleTTest(d); tail = :right)
+end
+
+# given one n_rp column of cells, the indices "reasonable to use": the lowest-mean-regret cell
+# plus every cell that is not BOTH meaningfully worse (mean regret beyond the equivalence margin)
+# AND statistically worse (paired t-test p<ALPHA). The margin handles deterministic near-ties that
+# a test flags as significant only because they have zero seed variance; the test excludes noisy
+# methods whose large mean gap survives their spread.
+function tied_with_best(samps)
+    valid = [i for i in eachindex(samps) if samps[i] !== nothing]
+    isempty(valid) && return Set{Int}()
+    best = argmin(i -> mean(values(samps[i].reg)), valid)
+    bmean = mean(values(samps[best].reg))
+    margin = max(MARGIN_ABS, MARGIN_REL * bmean)
+    tied = Set{Int}()
+    for i in valid
+        br, ir = paired(samps[best].reg, samps[i].reg)
+        gap = mean(ir) - mean(br)
+        (gap <= margin || worse_pvalue(br, ir) >= ALPHA) && push!(tied, i)
+    end
+    return tied
+end
+
+center(s, w) = (p = max(0, w - length(s)); l = p ÷ 2; " "^l * s * " "^(p - l))
+
+# header for the regret+time matrices: each column label spans a (regret | time) pair.
+function matrix_header(cols, corner)
+    @printf("  %-*s", LABELW, corner)
+    for c in cols; print(center(c, REGW + TIMEW)); end
+    @printf("\n  %-*s", LABELW, "")
+    for _ in cols; @printf("%*s%*s", REGW, "regret", TIMEW, "time"); end
+    println()
+end
+
+# one (regret | time) pair for the rows matching `r`, or a "-" when empty. `bold` wraps the
+# padded cell in ANSI bold AFTER width-padding so the escape codes never disturb alignment.
+function matrix_pair(r; bold=false)
+    s = @sprintf("%*s%*s", REGW, isempty(r) ? "-" : regret_cell(r), TIMEW, isempty(r) ? "" : time_cell(r))
+    print(bold ? "\e[1m$s\e[22m" : s)
+end
+
+# regret (%) matrix: rows = clustering, cols = weight, one table per (normalization, n_rp) group.
+# Grouping by normalization keeps economic / unscaled / minmax out of the same mean ± std cell;
+# grouping by n_rp lets each table's "reasonable" set be judged among directly comparable runs.
 function comparison_matrix(df)
     grid = sort(unique(df.n_rep_periods))
-    combos = [(cl, w) for cl in METHOD_ORDER for w in WEIGHT_ORDER
-              if any((df.clustering_type .== cl) .& (df.weight_type .== w))]
-    isempty(combos) && return
-    println("\nCOMPARISON — regret (%) vs n_rp, per clustering × weight (mean ± std over seeds; * = PROPOSED)")
-    @printf("  %-26s", "clustering / weight")
-    for n in grid; @printf("%12d", n); end
-    println()
-    for (cl, w) in combos
-        star = (cl, w) == PROPOSED ? " *" : ""
-        @printf("  %-26s", "$cl / $w$star")
+    isempty(grid) && return
+    weights = [w for w in WEIGHT_ORDER if any(df.weight_type .== w)]
+    println("\nCOMPARISON — regret (%) and total time (s): clustering (rows) × weight (cols), grouped by normalization × n_rp (mean ± std over seeds; BOLD = reasonable in that group: not both >margin worse in regret AND paired-t-test worse, p<$ALPHA)")
+    for nrm in ordered_norms(df)
+        nd = df[df.normalization .== nrm, :]
+        clusts = [cl for cl in METHOD_ORDER if any(nd.clustering_type .== cl)]
+        isempty(clusts) && continue
         for n in grid
-            r = df[(df.clustering_type .== cl) .& (df.weight_type .== w) .& (df.n_rep_periods .== n), :]
-            s = isempty(r) ? "-" : cell(r, :regret_pct)
-            @printf("%11s%s", s, s == "-" ? " " : "%")
+            g = nd[nd.n_rep_periods .== n, :]
+            isempty(g) && continue
+            cellrows(cl, w) = g[(g.clustering_type .== cl) .& (g.weight_type .== w), :]
+            # "reasonable" set judged over every clustering × weight cell in this group.
+            keys_ = [(cl, w) for cl in clusts for w in weights]
+            tied = Set(keys_[i] for i in tied_with_best([samples(cellrows(k...)) for k in keys_]))
+            println("\n  normalization = $nrm,  n_rp = $n")
+            matrix_header([disp(w) for w in weights], "clustering \\ weight")
+            for cl in clusts
+                @printf("  %-*s", LABELW, disp(cl))
+                for w in weights
+                    matrix_pair(cellrows(cl, w); bold = (cl, w) in tied)
+                end
+                println()
+            end
         end
-        println()
+    end
+end
+
+# The "few RPs beat many" story the grouped tables hide: the fewest representative periods at
+# which the best blended-hull method already matches or beats the best CONVENTIONAL method run at
+# the largest n_rp. Uses the canonical economic runs; compares best-in-family so the claim is
+# method-agnostic on both sides (strongest baseline vs strongest hull).
+function few_rp_headline(arms)
+    df = arms[.!occursin.("nocache", arms.name) .& (arms.normalization .== "economic") .&
+              isapprox.(arms.tol, 0.01; atol=1e-12), :]
+    grid = sort(unique(df.n_rep_periods))
+    length(grid) < 2 && return
+    nmax = maximum(grid)
+    meanof(sub, c) = (v = collect(skipmissing(getcol(sub, c))); isempty(v) ? nothing : mean(v))
+    # lowest-mean-regret (clustering, weight) within `family` at a given n_rp.
+    function best(family, n)
+        b = nothing
+        for cl in family, w in WEIGHT_ORDER
+            sub = df[(df.clustering_type .== cl) .& (df.weight_type .== w) .& (df.n_rep_periods .== n), :]
+            r = meanof(sub, :regret_pct); r === nothing && continue
+            (b === nothing || r < b.r) && (b = (r = r, t = meanof(sub, :total_time), name = combo_label(cl, w)))
+        end
+        b
+    end
+    bar = best(CONVENTIONAL, nmax); bar === nothing && return
+    for n in grid
+        n >= nmax && break
+        h = best(HULL, n); h === nothing && continue
+        if h.r <= bar.r
+            println("\nHEADLINE — few RPs beat many (economic): a blended-hull method needs far fewer periods than the best conventional baseline for the same regret")
+            @printf("  best blended-hull @ n_rp=%-4d : %-24s regret %5.1f%%, %6.1fs\n", n, h.name, h.r, something(h.t, NaN))
+            @printf("  best conventional @ n_rp=%-4d : %-24s regret %5.1f%%, %6.1fs\n", nmax, bar.name, bar.r, something(bar.t, NaN))
+            if h.t !== nothing && bar.t !== nothing && h.t > 0
+                @printf("  ⇒ %.0f× fewer representative periods and %.0f× faster, at equal-or-better regret.\n", nmax / n, bar.t / h.t)
+            else
+                @printf("  ⇒ %.0f× fewer representative periods, at equal-or-better regret.\n", nmax / n)
+            end
+            return
+        end
     end
 end
 
@@ -72,18 +225,17 @@ function ablation_table(df)
     sub = df[.!ismissing.(df.ablabel), :]
     count(l -> any(sub.ablabel .=== l), order) < 2 && return
     grid = sort(unique(sub.n_rep_periods))
-    println("\nABLATION (5bus) — regret (%) vs n_rp (each row knocks out one component of PROPOSED)")
-    @printf("  %-28s", "arm \\ n_rp")
-    for n in grid; @printf("%12d", n); end
-    println()
-    for label in order
-        rows = sub[sub.ablabel .=== label, :]
-        isempty(rows) && continue
-        @printf("  %-28s", label)
+    println("\nABLATION (5bus) — regret (%) and total time (s) vs n_rp (each row knocks out one component of PROPOSED; BOLD = reasonable at that n_rp: not both >margin worse AND paired-t-test worse, p<$ALPHA)")
+    matrix_header(["n_rp=$n" for n in grid], "arm \\ n_rp")
+    labels = [l for l in order if any(sub.ablabel .=== l)]
+    cellrows(l, n) = (rows = sub[sub.ablabel .=== l, :]; rows[rows.n_rep_periods .== n, :])
+    # per n_rp column: the arms whose regret is tied with the column's best.
+    tied = Dict(n => Set(labels[i] for i in tied_with_best([samples(cellrows(l, n)) for l in labels]))
+                for n in grid)
+    for label in labels
+        @printf("  %-*s", LABELW, label)
         for n in grid
-            r = rows[rows.n_rep_periods .== n, :]
-            s = isempty(r) ? "-" : cell(r, :regret_pct)
-            @printf("%11s%s", s, s == "-" ? " " : "%")
+            matrix_pair(cellrows(label, n); bold = label in tied[n])
         end
         println()
     end
@@ -110,21 +262,20 @@ function sensitivity_tables(df)
               if any((sens.clustering_type .== cl) .& (sens.weight_type .== w))]
     # one table per normalization so a single fragile normalization (e.g. minmax) does not
     # inflate the range of an otherwise-robust method; here range = spread over tol alone.
-    norm_order = ["economic", "unscaled", "minmax"]
-    norms = [nrm for nrm in norm_order if any(sens.normalization .== nrm)]
-    append!(norms, sort(unique(sens.normalization[.!in.(sens.normalization, Ref(norm_order))])))
-    println("\nSENSITIVITY (5bus dev) — regret (%) spread over tol, n_rp=10, per normalization (smaller range ⇒ more robust; * = PROPOSED)")
-    for nrm in norms
+    println("\nSENSITIVITY (5bus dev) — regret (%) spread over tol + median total time (s), n_rp=10, per normalization (smaller range ⇒ more robust)")
+    for nrm in ordered_norms(sens)
         ns = sens[sens.normalization .== nrm, :]
         length(unique(ns.tol)) < 2 && continue
         println("  normalization = $nrm")
-        @printf("  %-26s %10s %10s %10s %10s\n", "clustering / weight", "min", "median", "max", "range")
+        @printf("  %-*s %10s %10s %10s %10s %10s\n", LABELW, "clustering / weight", "min", "median", "max", "range", "med time")
         for (cl, w) in combos
-            v = collect(skipmissing(ns[(ns.clustering_type .== cl) .& (ns.weight_type .== w), :regret_pct]))
+            mask = (ns.clustering_type .== cl) .& (ns.weight_type .== w)
+            v = collect(skipmissing(ns[mask, :regret_pct]))
             isempty(v) && continue
-            star = (cl, w) == PROPOSED ? " *" : ""
-            @printf("  %-26s %9.1f%% %9.1f%% %9.1f%% %9.1f%%\n", "$cl / $w$star",
-                minimum(v), median(v), maximum(v), maximum(v) - minimum(v))
+            t = collect(skipmissing(ns[mask, :total_time]))
+            tstr = isempty(t) ? "-" : @sprintf("%.2fs", median(t))
+            @printf("  %-*s %9.1f%% %9.1f%% %9.1f%% %9.1f%% %10s\n", LABELW, combo_label(cl, w),
+                minimum(v), median(v), maximum(v), maximum(v) - minimum(v), tstr)
         end
     end
     # realized N(ε): median PGD iterations per tol (grows as ε shrinks; α, N fixed).
@@ -168,6 +319,8 @@ function summarize_file(path)
         100 * (r.evaluated_objective_value / ref_opt - 1)
     end
     arms.ablabel = [ablation_label(r.clustering_type, r.weight_type, r.normalization) for r in eachrow(arms)]
+    # total time = cluster + weight-fit + solve (the same stages broken out under RUNTIME).
+    arms.total_time = reduce(.+, (coalesce.(getcol(arms, s), 0.0) for s in TIME_STAGES))
     # investment (GEP) has no seasonal storage, so total_borrow is entirely missing/NA there.
     is_investment = all(ismissing, getcol(arms, :total_borrow))
     # development file iff it carries several tolerances at n_rp=10 (the sensitivity sweep).
@@ -178,6 +331,7 @@ function summarize_file(path)
         ablation_table(arms)
         sensitivity_tables(arms)
     else
+        few_rp_headline(arms)
         comparison_matrix(arms)
     end
 
@@ -197,7 +351,7 @@ function summarize_file(path)
             r = sub[(sub.clustering_type .== cl) .& (sub.weight_type .== w), :]
             isempty(r) && continue
             f(c) = (v = collect(skipmissing(getcol(r, c))); isempty(v) ? "-" : @sprintf("%.4g", mean(v)))
-            @printf("  %-26s %11s %11s %8s %11s %11s\n", "$cl / $w",
+            @printf("  %-26s %11s %11s %8s %11s %11s\n", combo_label(cl, w),
                 f(:total_spillage), f(:total_borrow), f(:max_weight_sum), f(:eval_cost_of_operations), f(:eval_cost_of_borrow))
         end
     end
@@ -209,7 +363,7 @@ function summarize_file(path)
             r = sub[(sub.clustering_type .== cl) .& (sub.weight_type .== w), :]
             isempty(r) && continue
             d = capacity_l1_diff(path, first(r.name), ref_name)
-            @printf("  %-26s %s\n", "$cl / $w", ismissing(d) ? "-" : @sprintf("%.1f%%", d))
+            @printf("  %-26s %s\n", combo_label(cl, w), ismissing(d) ? "-" : @sprintf("%.1f%%", d))
         end
     end
 
@@ -243,4 +397,4 @@ function main()
     found || println("\nNo result CSVs. Run e.g. run_case_studies(\"configs/5bus.toml\").")
 end
 
-main()
+abspath(PROGRAM_FILE) == (@__FILE__) && main()
