@@ -12,6 +12,12 @@
 #                 i.e. NOT both meaningfully worse (mean regret beyond the equivalence margin) AND
 #                 statistically worse (paired t-test p<ALPHA). The margin keeps reliable near-ties;
 #                 the t-test drops noisy methods whose big mean gap survives their spread.
+#                 CYAN marks cells on the global Pareto frontier (non-dominated across clustering ×
+#                 weight × n_rp × normalization): no other combo is no-slower-on-average (within a
+#                 small time margin) with either lower mean regret, or comparable mean regret and
+#                 lower regret variance.
+#   NORMALIZATION — economic vs unscaled, paired cell-by-cell: how many combos differ meaningfully,
+#                 plus a pooled two-sided paired t-test on Δregret. Prints only when both are present.
 #   ABLATION    — PROPOSED vs each single-component knockout, regret (%) + total time (s) vs n_rp (bold = reasonable per n_rp).
 #   SECONDARY   — curtailment, infeasibility (borrow), feasibility (max ΣW), cost split.
 #   CAPACITY    — (investment) ‖Δ invested_units‖₁ vs the full-horizon optimum.
@@ -73,8 +79,8 @@ time_cell(sub)   = ((m, s) = meanstd(sub, :total_time); m === nothing ? "-" : @s
 # to flag all but the most extreme differences. 0.10 trades a higher false-positive rate for the
 # ability to actually distinguish methods given the few runs we have.
 const ALPHA = 0.1
-const MARGIN_ABS = 1.0    # practical-equivalence margin on regret (percentage points), and
-const MARGIN_REL = 0.25   # as a fraction of the best regret; the larger of the two is used.
+const MARGIN_ABS = 1.0    # regret practical-equivalence margin (percentage points), and
+const MARGIN_REL = 0.25   # as a fraction of the better cell's mean; the larger of the two applies
 
 # per-seed regret and time samples for a cell, keyed by seed so two cells sharing a seed set
 # can be paired; nothing when the cell has no evaluated regret.
@@ -121,6 +127,77 @@ function tied_with_best(samps)
     return tied
 end
 
+# --- Pareto (non-domination) marking across clustering × weight × n_rp × normalization ---
+# `dominates(a, b)`: cell `a` dominates cell `b` iff `a` is not meaningfully slower on average AND
+#   (i)  `a` has meaningfully/significantly lower MEAN regret, or
+#   (ii) `a` has COMPARABLE mean regret but significantly lower regret VARIANCE (an F-test; a
+#        deterministic zero-variance method beats a seed-noisy one at equal mean).
+# Cells are compared on their shared seeds (paired). A cell is coloured cyan when nothing dominates it.
+const TIME_MARGIN_ABS = 0.1    # time practical-equivalence margin (seconds, ~one display unit), and
+const TIME_MARGIN_REL = 0.15   # as a fraction of the faster cell's mean; the larger of the two applies
+
+# `a` has meaningfully lower mean regret than `b`: strictly lower mean, the gap clears the
+# practical-equivalence margin, AND it is statistically significant (or untestable at a single
+# seed). Requiring BOTH — like the bold "reasonable" rule — is essential: deterministic methods
+# repeat identically across seeds, so a paired t-test on them reads any nonzero gap as significant
+# (zero variance ⇒ p≈0); without the margin gate a sub-margin gap would spuriously "dominate".
+function reg_meanbetter(a, b)
+    ra, rb = paired(a.reg, b.reg)
+    isempty(ra) && return false
+    ma, mb = mean(ra), mean(rb)
+    ma >= mb && return false
+    margin = max(MARGIN_ABS, MARGIN_REL * min(ma, mb))
+    (mb - ma > margin) || return false                 # must clear the practical margin, and
+    length(ra) < 2 || worse_pvalue(ra, rb) < ALPHA     # be significant (single seed: trust the mean)
+end
+
+# neither cell is meaningfully better in mean regret ⇒ their mean regrets are comparable.
+reg_comparable(a, b) = !reg_meanbetter(a, b) && !reg_meanbetter(b, a)
+
+# `a` has significantly lower regret variance than `b`: a deterministic (zero-variance) `a` beats a
+# varying `b` outright; when both vary, require the variance-ratio F-test to reject equality.
+function var_lower(a, b)
+    ra, rb = paired(a.reg, b.reg)
+    length(ra) < 2 && return false
+    va, vb = var(ra), var(rb)
+    (va >= vb || vb <= 0) && return false
+    va <= 0 && return true
+    pvalue(VarianceFTest(ra, rb)) < ALPHA
+end
+
+# `a` does not take meaningfully longer than `b` on average (mean total time, shared seeds):
+# equal-or-faster, or slower only within the practical-equivalence margin (an absolute sub-second
+# floor OR a relative fraction), or not significantly slower by the paired t-test. The floor keeps
+# trivial sub-second jitter from blocking a regret win (e.g. a 0.08s hull vs a 0.05s chronological),
+# while a genuinely-slower higher-n_rp cell still counts as slower.
+function time_not_longer(a, b)
+    ta, tb = paired(a.tim, b.tim)
+    isempty(ta) && return true
+    ma, mb = mean(ta), mean(tb)
+    ma <= mb && return true
+    margin = max(TIME_MARGIN_ABS, TIME_MARGIN_REL * mb)
+    (ma - mb <= margin) || (worse_pvalue(tb, ta) >= ALPHA)
+end
+
+function dominates(a, b)
+    time_not_longer(a, b) || return false
+    reg_meanbetter(a, b) && return true
+    return reg_comparable(a, b) && var_lower(a, b)
+end
+
+# keys (normalization, n_rp, clustering, weight) of the cells no other cell dominates.
+function nondominated_keys(df)
+    ks = NTuple{4,Any}[]; cells = Dict{NTuple{4,Any},Any}()
+    for nrm in unique(df.normalization), n in unique(df.n_rep_periods),
+        cl in unique(df.clustering_type), w in unique(df.weight_type)
+        sub = df[(df.normalization .== nrm) .& (df.n_rep_periods .== n) .&
+                 (df.clustering_type .== cl) .& (df.weight_type .== w), :]
+        s = samples(sub); s === nothing && continue
+        k = (nrm, n, cl, w); push!(ks, k); cells[k] = s
+    end
+    Set(k for k in ks if !any(k2 -> k2 != k && dominates(cells[k2], cells[k]), ks))
+end
+
 center(s, w) = (p = max(0, w - length(s)); l = p ÷ 2; " "^l * s * " "^(p - l))
 
 # header for the regret+time matrices: each column label spans a (regret | time) pair.
@@ -132,11 +209,14 @@ function matrix_header(cols, corner)
     println()
 end
 
-# one (regret | time) pair for the rows matching `r`, or a "-" when empty. `bold` wraps the
-# padded cell in ANSI bold AFTER width-padding so the escape codes never disturb alignment.
-function matrix_pair(r; bold=false)
+# one (regret | time) pair for the rows matching `r`, or a "-" when empty. ANSI styling is applied
+# AFTER width-padding so the escape codes never disturb alignment: `bold` = reasonable in group,
+# `cyan` = non-dominated on the global Pareto frontier (the two compose).
+function matrix_pair(r; bold=false, cyan=false)
     s = @sprintf("%*s%*s", REGW, isempty(r) ? "-" : regret_cell(r), TIMEW, isempty(r) ? "" : time_cell(r))
-    print(bold ? "\e[1m$s\e[22m" : s)
+    cyan && (s = "\e[36m$s\e[39m")
+    bold && (s = "\e[1m$s\e[22m")
+    print(s)
 end
 
 # regret (%) matrix: rows = clustering, cols = weight, one table per (normalization, n_rp) group.
@@ -146,7 +226,8 @@ function comparison_matrix(df)
     grid = sort(unique(df.n_rep_periods))
     isempty(grid) && return
     weights = [w for w in WEIGHT_ORDER if any(df.weight_type .== w)]
-    println("\nCOMPARISON — regret (%) and total time (s): clustering (rows) × weight (cols), grouped by normalization × n_rp (mean ± std over seeds; BOLD = reasonable in that group: not both >margin worse in regret AND paired-t-test worse, p<$ALPHA)")
+    nondom = nondominated_keys(df)   # Pareto frontier across ALL (normalization, n_rp, clustering, weight)
+    println("\nCOMPARISON — regret (%) and total time (s): clustering (rows) × weight (cols), grouped by normalization × n_rp (mean ± std over seeds; BOLD = reasonable in that group: not both >margin worse in regret AND paired-t-test worse, p<$ALPHA; CYAN = non-dominated across clustering×weight×n_rp×normalization: no other combo is no-slower-on-average with lower mean regret, or with comparable mean regret and lower regret variance)")
     for nrm in ordered_norms(df)
         nd = df[df.normalization .== nrm, :]
         clusts = [cl for cl in METHOD_ORDER if any(nd.clustering_type .== cl)]
@@ -163,11 +244,120 @@ function comparison_matrix(df)
             for cl in clusts
                 @printf("  %-*s", LABELW, disp(cl))
                 for w in weights
-                    matrix_pair(cellrows(cl, w); bold = (cl, w) in tied)
+                    matrix_pair(cellrows(cl, w); bold = (cl, w) in tied,
+                                cyan = (nrm, n, cl, w) in nondom)
                 end
                 println()
             end
         end
+    end
+end
+
+# Generic pairwise normalization comparison — is `normA` meaningfully different from `normB`?
+# Pairs the two normalizations cell-by-cell (same clustering × weight × n_rp, shared seeds) at the
+# canonical tol, classifies each with the same margin+t-test rule used elsewhere, and pools every
+# per-seed regret difference into one two-sided paired t-test. Returns `nothing` when either
+# normalization is absent from `arms`; returns `n_total=0` when present but never co-occurring on
+# the same (clustering, weight, n_rp) cell. Factored out of `normalization_compare` so the same
+# logic backs both the economic-vs-unscaled console report AND the synthetic system's 3-way
+# (economic/peak/min-max) comparison used by the sensitivity export.
+function normalization_compare_pair(arms, normA, normB)
+    df = arms[.!occursin.("nocache", arms.name) .& isapprox.(arms.tol, 0.01; atol=1e-12), :]
+    (any(df.normalization .== normA) && any(df.normalization .== normB)) || return nothing
+    clusts = unique(df.clustering_type); weights = unique(df.weight_type); nrps = sort(unique(df.n_rep_periods))
+    cellsamp(nrm, cl, w, n) = samples(df[(df.normalization .== nrm) .& (df.clustering_type .== cl) .&
+                                         (df.weight_type .== w) .& (df.n_rep_periods .== n), :])
+    ncomp = nAb = nBb = ntot = 0
+    diffs = Float64[]; worst = (d = 0.0, name = "")
+    for cl in clusts, w in weights, n in nrps
+        aA = cellsamp(normA, cl, w, n); aB = cellsamp(normB, cl, w, n)
+        (aA === nothing || aB === nothing) && continue
+        ntot += 1
+        if reg_meanbetter(aA, aB); nAb += 1
+        elseif reg_meanbetter(aB, aA); nBb += 1
+        else; ncomp += 1
+        end
+        dA, dB = paired(aA.reg, aB.reg)
+        append!(diffs, dA .- dB)                       # normA − normB, per shared seed
+        md = isempty(dA) ? 0.0 : mean(dA) - mean(dB)
+        abs(md) > abs(worst.d) && (worst = (d = md, name = "$(combo_label(cl, w)) n_rp=$n"))
+    end
+    ntot == 0 && return (; normA, normB, n_total = 0, n_comparable = 0, n_a_better = 0, n_b_better = 0,
+                          p_value = NaN, mean_diff = NaN, worst_diff = NaN, worst_combo = "")
+    p = (length(diffs) < 2 || all(iszero, diffs)) ? 1.0 : pvalue(OneSampleTTest(diffs))
+    return (; normA, normB, n_total = ntot, n_comparable = ncomp, n_a_better = nAb, n_b_better = nBb,
+            p_value = p, mean_diff = (isempty(diffs) ? 0.0 : mean(diffs)), worst_diff = worst.d,
+            worst_combo = worst.name)
+end
+
+# Margin-only classification: `a` has meaningfully lower mean regret than `b` by the
+# practical-equivalence margin ALONE — no paired significance test. Needed because 5 of the paper's
+# 7 clustering methods (conical hull, convex hull, convex-hull-with-null, hierarchical,
+# chronological) are fully deterministic, so their 5 "seeds" are bit-identical: a paired t-test on
+# such a cell has zero within-cell variance, so it reads any nonzero mean gap as significant
+# (p≈0) — a degenerate, statistically invalid test. `reg_meanbetter` (above) papers over this by
+# using the margin to gate the test, but still runs/reports a p-value; this variant drops the test
+# entirely so the same rule applies uniformly to deterministic and stochastic cells alike.
+function reg_meanbetter_margin(a, b)
+    ra, rb = paired(a.reg, b.reg)
+    isempty(ra) && return false
+    ma, mb = mean(ra), mean(rb)
+    ma >= mb && return false
+    margin = max(MARGIN_ABS, MARGIN_REL * min(ma, mb))
+    mb - ma > margin
+end
+
+# Margin-only sibling of `normalization_compare_pair`: identical pairing/looping over
+# (clustering, weight, n_rp) cells, but classifies each cell as comparable / normA-better /
+# normB-better using ONLY the practical-equivalence margin (the larger of 1pp or 25% of the
+# better arm's mean regret) — no paired t-test fallback, no pooled p-value. Per reviewer guidance
+# ("descriptive win/comparable/loss counts may be sufficient without fragile significance
+# language"), and because a paired t-test is statistically invalid on the 5 deterministic
+# clustering methods (zero seed variance). Kept as a separate function (rather than changing
+# `normalization_compare_pair`'s signature/return shape) since that function is still called
+# elsewhere (`normalization_compare`, `export_sensitivity` in export_summary_csvs.jl) expecting
+# p_value/worst_diff/worst_combo in its return. Returns `nothing` when either normalization is
+# absent from `arms`; `n_total=0` when present but never co-occurring on the same cell.
+function normalization_compare_pair_margin_only(arms, normA, normB)
+    df = arms[.!occursin.("nocache", arms.name) .& isapprox.(arms.tol, 0.01; atol=1e-12), :]
+    (any(df.normalization .== normA) && any(df.normalization .== normB)) || return nothing
+    clusts = unique(df.clustering_type); weights = unique(df.weight_type); nrps = sort(unique(df.n_rep_periods))
+    cellsamp(nrm, cl, w, n) = samples(df[(df.normalization .== nrm) .& (df.clustering_type .== cl) .&
+                                         (df.weight_type .== w) .& (df.n_rep_periods .== n), :])
+    ncomp = nAb = nBb = ntot = 0
+    diffs = Float64[]
+    for cl in clusts, w in weights, n in nrps
+        aA = cellsamp(normA, cl, w, n); aB = cellsamp(normB, cl, w, n)
+        (aA === nothing || aB === nothing) && continue
+        ntot += 1
+        if reg_meanbetter_margin(aA, aB); nAb += 1
+        elseif reg_meanbetter_margin(aB, aA); nBb += 1
+        else; ncomp += 1
+        end
+        dA, dB = paired(aA.reg, aB.reg)
+        append!(diffs, dA .- dB)                       # normA − normB, per shared seed
+    end
+    ntot == 0 && return (; normA, normB, n_total = 0, n_comparable = 0, n_a_better = 0, n_b_better = 0,
+                          mean_diff = NaN)
+    return (; normA, normB, n_total = ntot, n_comparable = ncomp, n_a_better = nAb, n_b_better = nBb,
+            mean_diff = (isempty(diffs) ? 0.0 : mean(diffs)))
+end
+
+# NORMALIZATION — is economic meaningfully different from unscaled? If no cell differs
+# meaningfully, the choice is immaterial (drop one). Thin printing wrapper around
+# `normalization_compare_pair`; output text unchanged from before the refactor.
+function normalization_compare(arms)
+    r = normalization_compare_pair(arms, "economic", "unscaled")
+    (r === nothing || r.n_total == 0) && return
+    println("\nNORMALIZATION — economic vs unscaled (paired over seeds, canonical tol; same margin+t-test rule as the tables): does the choice matter?")
+    @printf("  %d combos (clustering × weight × n_rp): comparable %d, economic better %d, unscaled better %d\n",
+            r.n_total, r.n_comparable, r.n_a_better, r.n_b_better)
+    @printf("  pooled Δregret (economic − unscaled): mean %+.3f pp, largest |mean| %.3f pp (%s); two-sided paired t-test p=%.2g\n",
+            r.mean_diff, abs(r.worst_diff), isempty(r.worst_combo) ? "-" : r.worst_combo, r.p_value)
+    if r.n_a_better + r.n_b_better == 0
+        println("  ⇒ economic and unscaled are statistically indistinguishable here — the normalization choice does not matter.")
+    else
+        println("  ⇒ they differ meaningfully in $(r.n_a_better + r.n_b_better)/$(r.n_total) combos — the normalization choice matters.")
     end
 end
 
@@ -334,6 +524,7 @@ function summarize_file(path)
         few_rp_headline(arms)
         comparison_matrix(arms)
     end
+    normalization_compare(arms)   # economic vs unscaled — only prints when both are present
 
     # SECONDARY — at the largest n_rp, PROPOSED vs the k-means / k-medoids dirac baselines.
     grid = sort(unique(arms.n_rep_periods)); nfocus = maximum(grid)

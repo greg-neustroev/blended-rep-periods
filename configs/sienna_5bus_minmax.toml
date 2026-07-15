@@ -1,0 +1,11 @@
+# Full min-max normalization sweep on 5-bus (cheap, ~0.8s/arm), to have a real (not just
+# synthetic + partial gep/p2x) case-study confirmation that min-max is dominated, justifying
+# dropping it from the main comparison campaign. Shares the sienna/5bus data/output namespace.
+inputs = [
+  { sweep = "sienna/5bus_minmax", data = "sienna/5bus" },
+]
+master_seed = 382507
+n_seeds     = 5
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

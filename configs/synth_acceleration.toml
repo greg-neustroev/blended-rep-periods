@@ -1,0 +1,18 @@
+# Acceleration ablation: isolates the Gram-matrix reformulation's contribution from FISTA's, on
+# the synthetic dev system. Three PGD variants (see BlendedClustering.TemporalClustering's
+# `pgd_variant` kwarg): proposed (Gram + FISTA + restart, the production default -- already present
+# in outputs/synth/hydro.csv from the main ablation sweep, so those arms are skipped on resume, not
+# re-solved), gram_only (Gram, plain un-accelerated PGD), plain (no Gram, plain PGD -- the
+# pre-acceleration baseline). All three must converge to the identical regret/projection error;
+# only pgd_total_iters and time_to_fit_weights should differ.
+#
+# data="synth/hydro" reuses the existing dev-system dataset and its shared outputs/synth/hydro.csv
+# namespace (so the "proposed" rows already there are reused rather than duplicated).
+inputs = [
+  { sweep = "synth/acceleration", data = "synth/hydro" },
+]
+master_seed = 382507
+n_seeds     = 5
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

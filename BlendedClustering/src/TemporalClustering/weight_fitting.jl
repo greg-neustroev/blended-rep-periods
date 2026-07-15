@@ -132,6 +132,13 @@ The arguments:
   - `projection`: the Euclidean projection onto the feasible set
   - `tol`: the resolution / first-order optimality tolerance (see above)
   - `learning_rate`: the step size `α` (the callers set it to `1/L` per instance)
+  - `backend`: `:fista` (default, the accelerated method described above) or `:plain`
+    — un-accelerated projected gradient descent (no momentum/extrapolation, no
+    restart), kept ONLY to let the acceleration ablation study isolate FISTA's
+    contribution from the Gram-matrix reformulation's (see `fit_rep_period_weights!`'s
+    `pgd_variant` argument). `:plain` uses the identical certified stopping test, so
+    both backends converge to the same fixed point — only the iteration count and
+    wall-clock differ.
 
 Returns the tuple `(x, iterations)`: the fitted point and the number of iterations
 the loop actually ran (so callers can record the observed `N(ε)` without imposing it).
@@ -142,11 +149,14 @@ function projected_gradient_descent!(
   projection::Function,
   tol::Float64=1e-2,
   learning_rate::Float64=1e-3,
+  backend::Symbol=:fista,
 )
+  backend ∈ (:fista, :plain) || throw(ArgumentError("Unsupported PGD backend $(backend); expected :fista or :plain."))
   α = learning_rate
   # The initial guess may lie outside the feasible set; project it first. `x` always
   # holds the latest feasible iterate; `y` is the (possibly infeasible) extrapolation
-  # point at which the gradient is evaluated.
+  # point at which the gradient is evaluated (for backend=:plain, y is always x, i.e.
+  # plain un-accelerated PGD with no momentum).
   x = projection(x)
   y = copy(x)
   t = 1.0
@@ -157,11 +167,12 @@ function projected_gradient_descent!(
   for _ ∈ 1:PGD_MAX_ITERS
     iterations += 1
     g = gradient(y)
-    x_new = projection(y .- α .* g)          # accelerated gradient + projection step
+    x_new = projection(y .- α .* g)          # (accelerated, if backend=:fista) gradient + projection step
     # Adaptive restart (O'Donoghue–Candès): if the momentum (x_new − x) points against
     # the projected descent step (y − x_new), the extrapolation is overshooting. Drop
-    # the momentum and retake the step from the feasible iterate x.
-    if dot(y .- x_new, x_new .- x) > 0
+    # the momentum and retake the step from the feasible iterate x. Not applicable to
+    # the :plain backend, which never builds momentum in the first place.
+    if backend ≡ :fista && dot(y .- x_new, x_new .- x) > 0
       y = x
       g = gradient(y)
       x_new = projection(y .- α .* g)
@@ -174,11 +185,15 @@ function projected_gradient_descent!(
       g_cert = gradient(x_new)
       converged = norm(projection(x_new .- α .* g_cert) .- x_new) ≤ threshold
     end
-    # Nesterov extrapolation for the next iterate.
-    t_next = (1.0 + sqrt(1.0 + 4.0 * t^2)) / 2.0
-    y = x_new .+ ((t - 1.0) / t_next) .* (x_new .- x)
+    if backend ≡ :fista
+      # Nesterov extrapolation for the next iterate.
+      t_next = (1.0 + sqrt(1.0 + 4.0 * t^2)) / 2.0
+      y = x_new .+ ((t - 1.0) / t_next) .* (x_new .- x)
+      t = t_next
+    else
+      y = x_new   # :plain — next gradient is evaluated at the feasible iterate itself
+    end
     x = x_new
-    t = t_next
     converged && break
   end
   # Return the realized iteration count alongside the fitted point so callers can
@@ -212,6 +227,21 @@ The arguments:
     moves by more than `tol`, base periods already reconstructed within `tol` skip
     fitting, and fitted weights below `tol` are dropped (e.g. with `tol = 1e-2`
     weights are blending percentages and contributions under 1% are noise).
+  - `pgd_variant`: which of the three acceleration-ablation arms to run (exists so the
+    contribution of the Gram-matrix reformulation and of FISTA-with-restart can be
+    isolated experimentally; NOT a knob for production use — always leave this at its
+    default outside the ablation study):
+      - `:proposed` (default): Gram-matrix gradient (precomputed `G=RᵀR`, `B=RᵀC`) +
+        FISTA with adaptive restart — the method described above and used everywhere
+        else in the package.
+      - `:gram_only`: the same Gram-matrix gradient, but plain (un-accelerated) PGD —
+        isolates FISTA's contribution alone (same gradient cost per iteration as
+        `:proposed`, more iterations to converge).
+      - `:plain`: the "tall-R" gradient `Rᵀ(Rw−c_d)`, recomputed every iteration
+        without the Gram-matrix precomputation, and plain PGD — the pre-acceleration
+        baseline both changes were compared against.
+    All three converge to the identical fixed point (same objective, same certified
+    stopping test) — only iteration count and wall-clock time differ.
 """
 function fit_rep_period_weights!(
   weight_matrix::Union{SparseMatrixCSC{Float64,Int64},Matrix{Float64}},
@@ -220,7 +250,12 @@ function fit_rep_period_weights!(
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
   diagnostics::Union{Nothing,Dict{Symbol,Any}}=nothing,
+  pgd_variant::Symbol=:proposed,
 )
+  pgd_variant ∈ (:proposed, :gram_only, :plain) ||
+    throw(ArgumentError("Unsupported pgd_variant $(pgd_variant); expected :proposed, :gram_only, or :plain."))
+  use_gram = pgd_variant ≡ :proposed || pgd_variant ≡ :gram_only
+  pgd_backend = pgd_variant ≡ :proposed ? :fista : :plain
   # Determine the appropriate projection method
   if weight_type ≡ :dirac
     return weight_matrix
@@ -264,11 +299,14 @@ function fit_rep_period_weights!(
   # per-iteration saving, and the same G/B are shared across all base periods.
   # Principled PGD step size: eigmax(G) = σ_max²(R) = L is the Lipschitz constant of
   # the objective's gradient, so α = 1/L exactly as before (now read off the small
-  # n_rp×n_rp Gram matrix rather than an SVD of the tall R).
+  # n_rp×n_rp Gram matrix rather than an SVD of the tall R). `L` itself is needed for
+  # the step size regardless of `pgd_variant` (even the :plain ablation arm uses the
+  # same principled α = 1/L — only the per-iteration gradient cost differs).
   gram = Symmetric(rp_matrix' * rp_matrix)
-  projected_targets = rp_matrix' * clustering_matrix
   step_size = 1 / eigmax(gram)
-  grad_buf = Vector{Float64}(undef, size(gram, 1))
+  # `projected_targets`/`grad_buf` are only needed by the Gram-based gradient path.
+  projected_targets = use_gram ? rp_matrix' * clustering_matrix : nothing
+  grad_buf = use_gram ? Vector{Float64}(undef, size(gram, 1)) : nothing
 
   # Record per-fit PGD iteration counts (one entry per base period that is
   # actually fitted, i.e. not already within `tol`), so the observed N(ε) range
@@ -278,15 +316,23 @@ function fit_rep_period_weights!(
   for period ∈ 1:n_periods
     target_vector = clustering_matrix[:, period]
     x = projection(initial_weight_matrix[:, period])
-    b = view(projected_targets, :, period)
-    gradient = let gram = gram, b = b, grad_buf = grad_buf
-      w -> (mul!(grad_buf, gram, w); grad_buf .-= b; grad_buf)
+    gradient = if use_gram
+      b = view(projected_targets, :, period)
+      let gram = gram, b = b, grad_buf = grad_buf
+        w -> (mul!(grad_buf, gram, w); grad_buf .-= b; grad_buf)
+      end
+    else
+      # Ablation-only baseline: recompute the "tall-R" gradient Rᵀ(Rw−c_d) every call,
+      # without the Gram-matrix precomputation — the pre-7c80509 cost profile.
+      let rp_matrix = rp_matrix, target_vector = target_vector
+        w -> rp_matrix' * (rp_matrix * w - target_vector)
+      end
     end
     initial_projection_eror = norm(rp_matrix * x - target_vector)
     if initial_projection_eror ≤ tol
       continue  # already reconstructed within the resolution; keep the initial weights
     end
-    x, n_iter = projected_gradient_descent!(x; gradient, projection, tol, learning_rate=step_size)
+    x, n_iter = projected_gradient_descent!(x; gradient, projection, tol, learning_rate=step_size, backend=pgd_backend)
     push!(pgd_iters, n_iter)
     fitted_projection_error = norm(rp_matrix * x - target_vector)
     if fitted_projection_error > initial_projection_eror
@@ -337,11 +383,14 @@ The arguments:
     `:convex`, `:conical`, and `:conical_bounded` (see the primary method).
   - `tol`: the resolution to which weights are determined; the single tolerance
     used throughout fitting (see the primary method).
+  - `pgd_variant`: acceleration-ablation arm; see the primary method (leave at its
+    `:proposed` default outside the ablation study).
 """
 function fit_rep_period_weights!(
   clustering_result::ClusteringResult;
   weight_type::Symbol=:dirac,
   tol::Float64=1e-2,
+  pgd_variant::Symbol=:proposed,
 )
   fit_rep_period_weights!(
     clustering_result.weight_matrix,
@@ -350,6 +399,7 @@ function fit_rep_period_weights!(
     weight_type,
     tol,
     diagnostics=clustering_result.diagnostics,
+    pgd_variant,
   )
 end
 

@@ -92,14 +92,6 @@ function create_optimization_model!(connection, model, clustering_result)
         @variable(model, state_of_charge_inter[S_seas, D] ≥ 0)
         @variable(model, spillage[S_seas, R, H] ≥ 0)
         @variable(model, borrow[S_seas, R, H] ≥ 0)
-        # Elastic slacks on the inter-period state-of-charge band (see the
-        # `soc_cap_inter` block): `soc_band_over` absorbs over-shoot above the upper
-        # level, `soc_band_under` absorbs under-shoot below the lower level. They make
-        # the seasonal band a penalised soft constraint rather than a hard one, so the
-        # reduced model is feasible-by-construction for any weight class (a conical
-        # prolongation that over-scales the band can no longer make it infeasible).
-        @variable(model, soc_band_over[S_seas, D] ≥ 0)
-        @variable(model, soc_band_under[S_seas, D] ≥ 0)
         @variable(model, flow[L, R, H])
         # Per-base-day conservation slacks on the inter-period storage chain, added only
         # under exact-inflow injection. `soc_chain_spill` removes mass (spill) and
@@ -139,6 +131,15 @@ function create_optimization_model!(connection, model, clustering_result)
         # solve via `value(model[:cost_of_operations])` etc. — kept distinct (rather
         # than lumped into one `cost_of_operations`) so capex/opex/spillage/ENS can
         # be reported without re-solving.
+        # Unit convention in the objective: all operational cost terms are put on a common
+        # per-power ($/h) basis so MW and MWh variables agree. `power_out` is already a power
+        # (MW), so its cost uses `variable_cost` directly; the energy-based slacks (spillage /
+        # borrow below, which are per-step energy MWh — see the seasonal storage balance) are
+        # divided by the timestep duration τ to convert MWh→MW. τ is applied to each unit
+        # *price* (never to `rp_weight`, which is shared across terms and carries the period
+        # count only). For hourly data (τ=1) this is a no-op; it matters only for sub-hourly
+        # datasets such as RTS (τ = 5/60 h), where the objective becomes (true cost ÷ τ) — a
+        # global scalar that leaves the optimum and the regret ratio unchanged.
         @expression(model, cost_of_operations, AffExpr(0.0))
         operations_cost_data = run_query("SELECT * FROM operations_cost_objective_view")
         for row in rows(operations_cost_data)
@@ -154,7 +155,7 @@ function create_optimization_model!(connection, model, clustering_result)
         @expression(model, cost_of_spillage, AffExpr(0.0))
         spillage_cost_data = run_query("SELECT * FROM spillage_cost_objective_view")
         for row in rows(spillage_cost_data)
-            c = row.spillage_cost
+            c = row.spillage_cost / timestep_duration   # MWh→MW: match the power-basis operations term
             for r in R
                 w = rp_weight[r] * c
                 for h in H
@@ -166,31 +167,12 @@ function create_optimization_model!(connection, model, clustering_result)
         @expression(model, cost_of_borrow, AffExpr(0.0))
         borrow_cost_data = run_query("SELECT * FROM borrow_cost_objective_view")
         for row in rows(borrow_cost_data)
-            c = row.borrow_cost
+            c = row.borrow_cost / timestep_duration   # MWh→MW: match the power-basis operations term
             for r in R
                 w = rp_weight[r] * c
                 for h in H
                     add_to_expression!(cost_of_borrow, w, borrow[row.id, r, h])
                 end
-            end
-        end
-
-        # Penalty on the elastic inter-period state-of-charge band. The band slack is
-        # indexed per base period d (not per representative period), so its per-unit
-        # price is `operations_weight * borrow_cost` — exactly the per-base-period rate
-        # at which `borrow` is charged (rp_weight already folds operations_weight and
-        # the column sum of W into the intra-period borrow). At this rate the penalty
-        # is an *exact* penalty: violating the band to free up a unit of stored energy
-        # never beats the genuine alternatives (whose marginal value is bounded by the
-        # borrow backstop at VOLL), so feasible models leave the slacks at zero and are
-        # unchanged, while an otherwise-infeasible band reports finite regret instead.
-        @expression(model, cost_of_soc_band, AffExpr(0.0))
-        soc_band_cost_data = run_query("SELECT * FROM borrow_cost_objective_view")
-        for row in rows(soc_band_cost_data)
-            w = operations_weight * row.borrow_cost
-            for d in D
-                add_to_expression!(cost_of_soc_band, w, soc_band_over[row.id, d])
-                add_to_expression!(cost_of_soc_band, w, soc_band_under[row.id, d])
             end
         end
 
@@ -208,14 +190,15 @@ function create_optimization_model!(connection, model, clustering_result)
             borrow_price = Dict(string(r.id) => r.borrow_cost
                                 for r in rows(run_query("SELECT id, borrow_cost FROM borrow_cost_objective_view")))
             for s in S_seas, d in D
-                add_to_expression!(cost_of_chain_spill, operations_weight * spill_price[string(s)], soc_chain_spill[s, d])
-                add_to_expression!(cost_of_chain_borrow, operations_weight * borrow_price[string(s)], soc_chain_borrow[s, d])
+                # `/ timestep_duration`: same per-power objective basis as the other slacks.
+                add_to_expression!(cost_of_chain_spill, operations_weight * spill_price[string(s)] / timestep_duration, soc_chain_spill[s, d])
+                add_to_expression!(cost_of_chain_borrow, operations_weight * borrow_price[string(s)] / timestep_duration, soc_chain_borrow[s, d])
             end
         end
 
         # Finally, formulate the objective function as the sum of the costs
         @objective(model, Min, cost_of_investment + cost_of_operations + cost_of_spillage +
-                   cost_of_borrow + cost_of_soc_band + cost_of_chain_spill + cost_of_chain_borrow)
+                   cost_of_borrow + cost_of_chain_spill + cost_of_chain_borrow)
     end
 
     @info "Creating constraints"
@@ -619,29 +602,22 @@ function create_optimization_model!(connection, model, clustering_result)
                 @constraint(model, state_of_charge_inter[s, d] ≤ mx * cap[string(s)])
             end
         else
-            # Historical soft band: the level may breach the band by paying the
-            # `cost_of_soc_band` penalty through the elastic slacks `soc_band_under` (below
-            # the lower level) and `soc_band_over` (above the upper level). The variable keeps
-            # its physical `≥ 0` floor (a deficit there is met by the intra-period `borrow`
-            # slack, never infeasible); only the band's min/max *levels* are relaxed. That is
-            # the single thing a conical prolongation can over-scale into infeasibility, so
-            # softening it makes the model feasible for any weight class while the exact
-            # penalty leaves feasible cells untouched. (No rows ⇒ no band at all, the prior
-            # behaviour for datasets without reservoir-level profiles.)
+            # Hard inter-period band, applied only when there is no genuine reduction
+            # (length(D) == 1: the full-horizon reference / evaluation model). The physical
+            # trajectory respects the reservoir bounds by construction, so no slack is needed.
+            # For a real reduction the `inject` branch above enforces the band with its own
+            # chain-slack recourse. (No rows ⇒ no band, for datasets without reservoir-level
+            # profiles.)
             for row in rows(interperiod_storage_capacity_data)
                 @constraint(model,
                     state_of_charge_inter[row.id, row.period]
                     ≥
                     row.min_storage_level * row.capacity_storage_energy
-                    -
-                    soc_band_under[row.id, row.period]
                 )
                 @constraint(model,
                     state_of_charge_inter[row.id, row.period]
                     ≤
                     row.max_storage_level * row.capacity_storage_energy
-                    +
-                    soc_band_over[row.id, row.period]
                 )
             end
         end

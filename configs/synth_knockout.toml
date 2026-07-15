@@ -1,0 +1,24 @@
+# Knockout ablation: does removing an engineering optimization (the projection cache, FISTA
+# acceleration, the Gram-matrix reformulation) change SOLUTION QUALITY (regret, mismatch), or only
+# WALL-CLOCK TIME? Unlike the single-combination acceleration ablation (configs/synth_acceleration.toml,
+# fixed at conical_hull/convex), this sweep repeats the same four knockout arms --
+#   proposed   (cache=true,  pgd_variant=proposed)   -- cache + Gram + FISTA, the production default
+#   no-cache   (cache=false, pgd_variant=proposed)   -- isolates the projection cache's contribution
+#   gram_only  (cache=true,  pgd_variant=gram_only)  -- isolates FISTA's contribution (Gram kept)
+#   plain      (cache=true,  pgd_variant=plain)      -- isolates the Gram-matrix reformulation's
+#                                                        contribution (neither Gram nor FISTA)
+# -- across FOUR hull x weight combinations ({convex_hull, conical_hull} x {convex, conical}), since
+# the paper does not commit to one hull/weight choice and the "these are free lunches" claim should
+# hold generally, not just for one cherry-picked combination.
+#
+# data="synth/hydro" reuses the existing dev-system dataset and its shared outputs/synth/hydro.csv
+# namespace, so any arm that happens to already exist there (e.g. conical_hull/convex/cache=true/
+# proposed, from the main ablation sweep) is skipped on resume rather than re-solved.
+inputs = [
+  { sweep = "synth/knockout", data = "synth/hydro" },
+]
+master_seed = 382507
+n_seeds     = 5
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"

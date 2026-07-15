@@ -39,6 +39,12 @@ const DEFAULT_NORMALIZATION = :unscaled
 # asset's per-period total inflow energy (see `find_representative_periods`).
 const DEFAULT_INFLOW_INTEGRAL_WEIGHT = 0.0
 
+# Default weight-fitting PGD variant used when a configuration CSV omits the optional
+# `pgd_variant` column. `:proposed` is the Gram-matrix + FISTA-with-restart method used
+# everywhere in the package; `:gram_only` and `:plain` exist ONLY for the acceleration
+# ablation study (isolating the Gram-matrix reformulation's contribution from FISTA's).
+const DEFAULT_PGD_VARIANT = :proposed
+
 
 """
     read_run_data(path) -> DataFrame
@@ -65,9 +71,12 @@ function read_run_data(path)
         error("Input CSV file is missing required columns: $required_columns")
     end
     symbol_columns = [:clustering_type, :weight_type, :evaluation_type]
-    # `normalization` is optional; convert it to a Symbol only when present.
+    # `normalization`/`pgd_variant` are optional; convert to Symbols only when present.
     if "normalization" in names(df)
         push!(symbol_columns, :normalization)
+    end
+    if "pgd_variant" in names(df)
+        push!(symbol_columns, :pgd_variant)
     end
     transform!(df, symbol_columns .=> ByRow(Symbol) .=> symbol_columns)
     return df
@@ -89,13 +98,14 @@ struct ExperimentData
     normalization::Symbol
     cache::Bool
     inflow_integral_weight::Float64
+    pgd_variant::Symbol
     evaluation_type::Symbol
 
     function ExperimentData(run_data_row::DataFrameRow{DataFrame,DataFrames.Index}, base_name::String)
         # `tol` (the PGD tolerance ε) is optional; fall back to the default when
         # the configuration CSV does not provide the column.
         tol = hasproperty(run_data_row, :tol) ? Float64(run_data_row.tol) : DEFAULT_PGD_TOL
-        # `normalization` is optional and defaults to the historical `:minmax`.
+        # `normalization` is optional and defaults to `:unscaled` (DEFAULT_NORMALIZATION).
         normalization = hasproperty(run_data_row, :normalization) ?
                         Symbol(run_data_row.normalization) : DEFAULT_NORMALIZATION
         # `cache` toggles the greedy-hull projection cache; optional and on by
@@ -107,6 +117,10 @@ struct ExperimentData
         inflow_integral_weight = hasproperty(run_data_row, :inflow_integral_weight) ?
                                  Float64(run_data_row.inflow_integral_weight) :
                                  DEFAULT_INFLOW_INTEGRAL_WEIGHT
+        # `pgd_variant` selects the acceleration-ablation arm (see DEFAULT_PGD_VARIANT);
+        # optional, and essentially never set outside the ablation study itself.
+        pgd_variant = hasproperty(run_data_row, :pgd_variant) ?
+                      Symbol(run_data_row.pgd_variant) : DEFAULT_PGD_VARIANT
         # Keep the experiment name (and thus output paths) unchanged for the
         # default normalization/cache; only the non-default arms get a suffix, so the
         # same RP grid can be run several ways without colliding.
@@ -124,6 +138,9 @@ struct ExperimentData
         if inflow_integral_weight ≠ DEFAULT_INFLOW_INTEGRAL_WEIGHT
             push!(name_parts, "inflowint$(inflow_integral_weight)")
         end
+        if pgd_variant ≠ DEFAULT_PGD_VARIANT
+            push!(name_parts, string(pgd_variant))
+        end
         if !cache
             push!(name_parts, "nocache")
         end
@@ -138,6 +155,7 @@ struct ExperimentData
             normalization,
             cache,
             inflow_integral_weight,
+            pgd_variant,
             run_data_row.evaluation_type
         )
     end
@@ -255,7 +273,6 @@ struct ExperimentResult
     cost_of_operations::Union{Float64,Missing}
     cost_of_spillage::Union{Float64,Missing}
     cost_of_borrow::Union{Float64,Missing}
-    cost_of_soc_band::Union{Float64,Missing}
     n_variables::Int
     n_constraints::Int
     # Evaluation (full-horizon) model: regret numerator, cost decomposition, size.
@@ -265,12 +282,10 @@ struct ExperimentResult
     eval_cost_of_operations::Union{Float64,Missing}
     eval_cost_of_spillage::Union{Float64,Missing}
     eval_cost_of_borrow::Union{Float64,Missing}
-    eval_cost_of_soc_band::Union{Float64,Missing}
     eval_n_variables::Int
     eval_n_constraints::Int
     total_spillage::Float64
     total_borrow::Float64
-    total_soc_band::Float64
     # Runtime breakdown.
     time_to_preprocess::Float64
     time_to_cluster::Float64
@@ -322,7 +337,6 @@ struct ExperimentResult
         cost_of_operations = _solved_value(solved_model, :cost_of_operations)
         cost_of_spillage = _solved_value(solved_model, :cost_of_spillage)
         cost_of_borrow = _solved_value(solved_model, :cost_of_borrow)
-        cost_of_soc_band = _solved_value(solved_model, :cost_of_soc_band)
         n_variables = _n_variables(solved_model)
         n_constraints = _n_constraints(solved_model)
 
@@ -340,7 +354,6 @@ struct ExperimentResult
         eval_cost_of_operations = _solved_value(eval_model, :cost_of_operations)
         eval_cost_of_spillage = _solved_value(eval_model, :cost_of_spillage)
         eval_cost_of_borrow = _solved_value(eval_model, :cost_of_borrow)
-        eval_cost_of_soc_band = _solved_value(eval_model, :cost_of_soc_band)
         eval_n_variables = _n_variables(eval_model)
         eval_n_constraints = _n_constraints(eval_model)
         total_spillage = if !isnothing(eval_model) && haskey(eval_model, :spillage) && !isempty(eval_model[:spillage])
@@ -350,14 +363,6 @@ struct ExperimentResult
         end
         total_borrow = if !isnothing(eval_model) && haskey(eval_model, :borrow) && !isempty(eval_model[:borrow])
             value.(eval_model[:borrow]) |> sum
-        else
-            0.0
-        end
-        # Total inter-period band violation (over- plus under-shoot) in the eval
-        # model: the physical seasonal-band breach the soft relaxation absorbed.
-        total_soc_band = if !isnothing(eval_model) &&
-                            haskey(eval_model, :soc_band_over) && !isempty(eval_model[:soc_band_over])
-            (value.(eval_model[:soc_band_over]) |> sum) + (value.(eval_model[:soc_band_under]) |> sum)
         else
             0.0
         end
@@ -391,7 +396,6 @@ struct ExperimentResult
             cost_of_operations,
             cost_of_spillage,
             cost_of_borrow,
-            cost_of_soc_band,
             n_variables,
             n_constraints,
             evaluation_termination_status,
@@ -400,12 +404,10 @@ struct ExperimentResult
             eval_cost_of_operations,
             eval_cost_of_spillage,
             eval_cost_of_borrow,
-            eval_cost_of_soc_band,
             eval_n_variables,
             eval_n_constraints,
             total_spillage,
             total_borrow,
-            total_soc_band,
             time_to_preprocess,
             time_to_cluster,
             time_to_fit_weights,
@@ -445,7 +447,6 @@ Tables.columns(res::ExperimentResult) = (;
     cost_of_operations=[res.cost_of_operations],
     cost_of_spillage=[res.cost_of_spillage],
     cost_of_borrow=[res.cost_of_borrow],
-    cost_of_soc_band=[res.cost_of_soc_band],
     n_variables=[res.n_variables],
     n_constraints=[res.n_constraints],
     evaluation_termination_status=[res.evaluation_termination_status],
@@ -454,12 +455,10 @@ Tables.columns(res::ExperimentResult) = (;
     eval_cost_of_operations=[res.eval_cost_of_operations],
     eval_cost_of_spillage=[res.eval_cost_of_spillage],
     eval_cost_of_borrow=[res.eval_cost_of_borrow],
-    eval_cost_of_soc_band=[res.eval_cost_of_soc_band],
     eval_n_variables=[res.eval_n_variables],
     eval_n_constraints=[res.eval_n_constraints],
     total_spillage=[res.total_spillage],
     total_borrow=[res.total_borrow],
-    total_soc_band=[res.total_soc_band],
     time_to_preprocess=[res.time_to_preprocess],
     time_to_cluster=[res.time_to_cluster],
     time_to_fit_weights=[res.time_to_fit_weights],

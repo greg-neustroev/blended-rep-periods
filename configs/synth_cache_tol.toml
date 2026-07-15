@@ -1,0 +1,16 @@
+# Cache x tolerance sensitivity: is the cache/no-cache regret divergence (Lemma 1's exact-oracle
+# caveat, Section sec:method) tolerance-dependent, and does it differ between conic and convex
+# hull? Crosses cache in {true, false} with tol in {0.01, 0.001, 0.0001, 1e-5} for both
+# conical_hull and convex_hull (weight_type=convex, economic normalization), at n_rep in {10, 20}.
+#
+# data="synth/hydro" reuses the existing dev-system dataset and its shared outputs/synth/hydro.csv
+# namespace, so any arm that already exists there (e.g. tol=0.01 cache=true/false, from the main
+# ablation and knockout sweeps) is skipped on resume rather than re-solved.
+inputs = [
+  { sweep = "synth/cache_tol", data = "synth/hydro" },
+]
+master_seed = 382507
+n_seeds     = 5
+solver      = "gurobi"
+inputs_dir  = "../inputs"
+outputs_dir = "../outputs"
