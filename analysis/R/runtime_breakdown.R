@@ -101,7 +101,7 @@ panels$x_group <- factor(panels$x_group, levels = x_levels)
 # bar gets no label of its own -- so the two bars in a pair don't render two separate, overlapping
 # tick labels.
 x_tick_breaks <- paste(n_rep_levels, "D")
-x_tick_labels <- paste("D ", n_rep_levels, " C")
+x_tick_labels <- n_rep_levels
 
 ref_lines <- df %>%
   filter(method_label == "full_reference") %>%
@@ -151,7 +151,7 @@ make_block <- function(case, show_x_title, ref_time_s, bar_max_time_s) {
     scale_fill_manual(name = "Pipeline stage", values = stage_colors, breaks = unname(stage_names)) +
     scale_y_continuous(name = "Time [s]", breaks = y_breaks, labels = y_labels,
                        expand = expansion(mult = c(0, 0.05))) +
-    scale_x_discrete(name = if (show_x_title) "# RP, weight type (D = Dirac, C = Convex)" else NULL,
+    scale_x_discrete(name = if (show_x_title) "# RP (Dirac left, Convex right)" else NULL,
                      breaks = x_tick_breaks, labels = x_tick_labels, drop = FALSE) +
     labs(title = case_titles[[case]]) +
     base_theme
