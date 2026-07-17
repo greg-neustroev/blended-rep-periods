@@ -22,7 +22,6 @@ include(joinpath(@__DIR__, "cache_hit_rate.jl"));             export_cache_hit_r
 include(joinpath(@__DIR__, "sensitivity.jl"));                export_sensitivity()
 include(joinpath(@__DIR__, "knockout_ablation.jl"));          export_knockout_ablation()
 include(joinpath(@__DIR__, "acceleration_ablation.jl"));      export_acceleration_ablation()
-include(joinpath(@__DIR__, "ablation_synth.jl"));             export_ablation()
 include(joinpath(@__DIR__, "knob_sensitivity.jl"));           export_knob_sensitivity()
 include(joinpath(@__DIR__, "secondary.jl"));                  export_secondary()
 include(joinpath(@__DIR__, "curtailment_renewable.jl"));      export_curtailment_renewable()
