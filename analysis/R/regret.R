@@ -315,7 +315,7 @@ time_stats <- by_seed %>%
 # with ~100 combinations per case study, bars on every point made the plot unreadable); only the
 # Pareto-optimal combinations are colored/shaped by method, carry error bars, and are connected by
 # the frontier line, so the reader's eye goes to the trade-off that actually matters.
-make_pareto_plot <- function(case) {
+make_pareto_plot <- function(case, show_x_title = TRUE, show_y_title = TRUE) {
   d <- df %>%
     filter(case_study == case) %>%
     left_join(time_stats, by = c("case_study", "clustering_type", "weight_type", "n_rep_periods"))
@@ -354,15 +354,18 @@ make_pareto_plot <- function(case) {
                aes(x = time_mean_s, y = regret_mean_pct, color = clustering_label, shape = weight_label),
                size = 3.2, stroke = 1.2) +
     coord_cartesian(ylim = c(0, y_cap)) +
-    scale_x_log10(name = "Total time [s]", labels = y_labels) +
-    scale_y_continuous(name = "Regret [%]", labels = y_labels) +
+    scale_x_log10(name = if (show_x_title) "Total time [s]" else NULL, labels = y_labels) +
+    scale_y_continuous(name = if (show_y_title) "Regret [%]" else NULL, labels = y_labels) +
     scale_color_manual(name = "Pareto-optimal\nclustering types", values = clustering_colors,
                         breaks = unname(clust_breaks), limits = unname(clustering_names)) +
     scale_shape_manual(values = weight_shapes, limits = unname(weight_names), guide = "none") +
     labs(title = case_titles[[case]]) +
     guides(color = guide_legend(override.aes = list(size = 3.2, alpha = 1, stroke = 1.2))) +
     base_theme +
-    theme(legend.position = "right", legend.box = "vertical")
+    theme(legend.position = "inside", legend.position.inside = c(0.98, 0.98),
+          legend.justification = c(1, 1), legend.box = "vertical",
+          legend.background = element_rect(fill = alpha("white", 0.75), color = NA),
+          legend.key = element_rect(fill = alpha("white", 0)))
 }
 
 # One combined 2x2 figure (case_titles' order: GEP, 5-bus, P2X, 118-bus); each panel keeps its OWN
@@ -378,11 +381,19 @@ weight_legend_plot <- ggplot(data.frame(w = factor(unname(weight_names), levels 
   theme_void() +
   theme(legend.position = "bottom", legend.title = element_text(size = 12), legend.text = element_text(size = 11))
 
-pareto_panels <- lapply(names(case_titles), make_pareto_plot)
+# 2-column grid: only the bottom row gets an x-axis title, only the first column gets a y-axis
+# title (every panel keeps its own tick labels/scale -- only the redundant repeated text goes).
+pareto_ncol <- 2
+pareto_cases <- names(case_titles)
+pareto_panels <- lapply(seq_along(pareto_cases), function(i) {
+  is_bottom_row <- i > length(pareto_cases) - pareto_ncol
+  is_first_col <- (i - 1) %% pareto_ncol == 0
+  make_pareto_plot(pareto_cases[i], show_x_title = is_bottom_row, show_y_title = is_first_col)
+})
 pareto_grid <- wrap_plots(pareto_panels, ncol = 2)
 pareto_combined <- pareto_grid / weight_legend_plot + plot_layout(heights = c(1, 0.08))
 
 ggsave(figure_path("central_pareto_overview.pdf"), pareto_combined,
-       width = 11, height = 9.3, device = cairo_pdf)
+       width = 8, height = 7.3, device = cairo_pdf)
 ggsave(figure_path("central_pareto_overview_preview.png"), pareto_combined,
-       width = 11, height = 9.3, dpi = 150)
+       width = 8, height = 7.3, dpi = 150)
