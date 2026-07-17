@@ -99,7 +99,7 @@ panels$x_group <- factor(panels$x_group, levels = x_levels)
 # bar gets no label of its own -- so the two bars in a pair don't render two separate, overlapping
 # tick labels.
 x_tick_breaks <- paste(n_rep_levels, "D")
-x_tick_labels <- paste("D /", n_rep_levels, "/ C")
+x_tick_labels <- paste("D ", n_rep_levels, " C")
 
 ref_lines <- df %>%
   filter(method_label == "full_reference") %>%
@@ -115,7 +115,7 @@ base_theme <- theme_minimal(base_size = 12) +
     plot.title = element_text(face = "bold", size = 14),
     axis.title.x = element_text(size = 12),
     axis.title.y = element_text(size = 11),
-    axis.text.x = element_text(size = 8),
+    axis.text.x = element_text(size = 8, hjust = 0),
     axis.line.x = element_line(color = "black", linewidth = 0.4),
     legend.position = "bottom",
     legend.title = element_text(size = 12),
