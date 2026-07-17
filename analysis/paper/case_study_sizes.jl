@@ -6,10 +6,19 @@
 # order and column layout directly.
 #
 # |G| excludes the virtual "ENS" loss-of-load generators, per the table's own caption. Asset class
-# (generation/storage/conversion) comes from joining assets.csv's `technology` column to
-# technologies.csv's `type`; short-term vs. seasonal storage is assets-storage.csv's row count
-# minus assets-storage-seasonal.csv's (the seasonal-only subset carries extra fields — peak
-# inflow, spillage/borrow cost — so its id set is a subset of assets-storage.csv's).
+# (generation/storage/conversion) comes from joining assets.csv's `technology` column to a
+# technology -> type map built from technologies.csv's `type` column UNIONED with membership in
+# technologies-generation.csv/-storage.csv/-conversion.csv: technologies.csv is occasionally
+# missing a row for a technology that nonetheless has real generation/storage/conversion
+# parameters in the per-class file (e.g. tyndp/p2x's `OCGT`, present in
+# technologies-generation.csv but absent from technologies.csv — confirmed still fully modeled,
+# via the reduced/eval Arrow dumps, just never dispatched), so relying on technologies.csv alone
+# silently undercounts. technologies.csv is authoritative where it does have a row; the per-class
+# files only fill in technologies it's missing.
+#
+# Short-term vs. seasonal storage is assets-storage.csv's row count minus
+# assets-storage-seasonal.csv's (the seasonal-only subset carries extra fields — peak inflow,
+# spillage/borrow cost — so its id set is a subset of assets-storage.csv's).
 #
 # "max buff. (days)" — the reservoir buffer described in the table caption as "capacity in days of
 # mean inflow" — is computed per seasonal-storage asset as capacity_storage_energy / (mean hourly
@@ -31,12 +40,42 @@ const CASE_INPUT_DIRS = [
     ("nrel/118bus", "118bus", "storage"),
 ]
 
+# technology id -> type ("generation"/"storage"/"conversion"), from technologies.csv's own `type`
+# column unioned with plain membership in the three per-class technology files (each file's
+# existence for a given id, regardless of technologies.csv, is itself the classification evidence).
+const PER_CLASS_FILES = (
+    ("technologies-generation.csv", "generation"),
+    ("technologies-storage.csv", "storage"),
+    ("technologies-conversion.csv", "conversion"),
+)
+
+function technology_types(ds)
+    base = joinpath(REPO_ROOT, "inputs", ds)
+    type_of = Dict{String,String}()
+    techs_path = joinpath(base, "technologies.csv")
+    if isfile(techs_path)
+        techs = CSV.read(techs_path, DataFrame)
+        for r in eachrow(techs); type_of[string(r.id)] = string(r.type); end
+    end
+    for (file, class) in PER_CLASS_FILES
+        path = joinpath(base, file)
+        isfile(path) || continue
+        df = CSV.read(path, DataFrame)
+        for r in eachrow(df)
+            id = string(r.id)
+            haskey(type_of, id) || (type_of[id] = class)
+        end
+    end
+    type_of
+end
+
 function asset_class_counts(ds)
     base = joinpath(REPO_ROOT, "inputs", ds)
     assets = CSV.read(joinpath(base, "assets.csv"), DataFrame)
-    techs = CSV.read(joinpath(base, "technologies.csv"), DataFrame)
-    type_of = Dict(string(r.id) => string(r.type) for r in eachrow(techs))
+    type_of = technology_types(ds)
     non_ens = assets[string.(assets.technology) .!= "ENS", :]
+    unclassified = unique(string.(non_ens.technology[.!haskey.(Ref(type_of), string.(non_ens.technology))]))
+    isempty(unclassified) || @warn "unclassified technologies (counted in neither |G| nor |C|) for $ds" unclassified
     n_g = count(r -> get(type_of, string(r.technology), "") == "generation", eachrow(non_ens))
     n_c = count(r -> get(type_of, string(r.technology), "") == "conversion", eachrow(non_ens))
     return (g = n_g, c = n_c)
