@@ -114,7 +114,7 @@ base_theme <- theme_minimal(base_size = 12) +
 
 y_labels <- function(x) format(x, scientific = FALSE, trim = TRUE, drop0trailing = TRUE)
 
-REGRET_CAP <- 100  # fallback ceiling used only by the (unused-in-paper) Pareto-plot section below
+REGRET_CAP <- 100  # fallback y-axis ceiling for the Pareto-front plot below (central_pareto_overview.pdf)
 
 # Strip A: facet by weight type, lines/colors = clustering method (all 7).
 # Regret is NOT clipped in the data. Each weight-type facet gets its own y-axis upper limit (via
@@ -292,10 +292,14 @@ ggsave(figure_path("central_regret_overview_preview.png"), grid_combined,
        width = 9, height = 21.5, dpi = 150, limitsize = FALSE)
 
 # ---------------------------------------------------------------------------------------------
-# Pareto-front plot: regret vs. total time, per case study, across all 112 clustering x weight x
-# n_rep combinations. Color = clustering method, shape = weight type (same encodings as above).
-# The Pareto frontier (already flagged per-row in regret_summary.csv's `pareto_frontier` column:
-# no other combination has both lower regret AND lower time) is traced with a solid black line.
+# Pareto-front plot: regret vs. total time, one combined 4-panel figure (one panel per case study,
+# 2x2), across all 112 clustering x weight x n_rep combinations per panel. Color = clustering
+# method, shape = weight type (same encodings as above). The Pareto frontier is already flagged
+# per-row in regret_summary.csv's `pareto_frontier` column (no other combination has both lower
+# regret AND lower time); Pareto-optimal points are highlighted (colored/shaped, with error bars)
+# but NOT connected by a line -- with only a handful of Pareto-optimal points per panel, a
+# connecting line reads as a trend the data doesn't actually support (regret and time don't trade
+# off smoothly along it), so the points are left to speak for themselves.
 # Stats bars on both axes: vertical = +-1 SD regret over 5 seeds (regret_summary.csv); horizontal
 # = +-1 SD wall-clock time over the same 5 seeds (computed here from regret_by_seed.csv, since
 # time is not deterministic even for methods whose regret is -- floating point/system noise).
@@ -326,11 +330,18 @@ make_pareto_plot <- function(case) {
   other_pts <- d %>% filter(!pareto_frontier)
   y_cap <- min(REGRET_CAP, max(d$regret_mean_pct))
 
+  # Each panel gets its OWN legend, restricted to just the clustering/weight combinations that
+  # actually appear on THIS case study's Pareto front (not the full 7/4-category list) -- a
+  # shared/collected legend across all four panels would otherwise show categories that never
+  # appear as Pareto-optimal here, and a global frontier-driven legend doesn't generalize across
+  # panels with different Pareto-optimal methods anyway.
+  clust_breaks <- clustering_names[names(clustering_names) %in% unique(as.character(pareto_pts$clustering_type))]
+  weight_breaks <- weight_names[names(weight_names) %in% unique(as.character(pareto_pts$weight_type))]
+
   ggplot() +
-    geom_point(data = other_pts, aes(x = time_mean_s, y = regret_mean_pct),
-               color = "grey75", size = 1.3, alpha = 0.7) +
-    geom_line(data = pareto_pts, aes(x = time_mean_s, y = regret_mean_pct),
-              color = "black", linewidth = 1.1) +
+    geom_point(data = other_pts,
+               aes(x = time_mean_s, y = regret_mean_pct, color = clustering_label, shape = weight_label),
+               size = 1, alpha = 0.35, stroke = 0.6) +
     geom_segment(data = pareto_pts,
                  aes(x = xmin, xend = xmax, y = regret_mean_pct, yend = regret_mean_pct),
                  color = "grey40", alpha = 0.6, linewidth = 0.4) +
@@ -342,19 +353,24 @@ make_pareto_plot <- function(case) {
     coord_cartesian(ylim = c(0, y_cap)) +
     scale_x_log10(name = "Total time [s]", labels = y_labels) +
     scale_y_continuous(name = "Regret [%]", labels = y_labels) +
-    scale_color_manual(name = "Clustering (Pareto-optimal only)", values = okabe_ito,
-                        breaks = unname(clustering_names)) +
-    scale_shape_manual(name = "Weight (Pareto-optimal only)", values = weight_shapes,
-                        breaks = unname(weight_names)) +
+    scale_color_manual(name = "Clustering (Pareto front)", values = okabe_ito,
+                        breaks = unname(clust_breaks), limits = unname(clustering_names)) +
+    scale_shape_manual(name = "Weight (Pareto front)", values = weight_shapes,
+                        breaks = unname(weight_breaks), limits = unname(weight_names)) +
     labs(title = case_titles[[case]]) +
+    guides(color = guide_legend(override.aes = list(size = 3.2, alpha = 1, stroke = 1.2)),
+           shape = guide_legend(override.aes = list(size = 3.2, alpha = 1, stroke = 1.2))) +
     base_theme +
-    theme(legend.box = "vertical")
+    theme(legend.position = "right", legend.box = "vertical")
 }
 
-for (case in names(case_titles)) {
-  p <- make_pareto_plot(case)
-  out <- figure_path(paste0("central_pareto_", case, ".pdf"))
-  preview <- figure_path(paste0("central_pareto_", case, "_preview.png"))
-  ggsave(out, p, width = 7, height = 6, device = cairo_pdf)
-  ggsave(preview, p, width = 7, height = 6, dpi = 150)
-}
+# One combined 2x2 figure (case_titles' order: GEP, 5-bus, P2X, 118-bus); each panel keeps its OWN
+# legend (see make_pareto_plot) rather than a shared/collected one, since the Pareto-optimal
+# clustering/weight combinations differ across case studies.
+pareto_panels <- lapply(names(case_titles), make_pareto_plot)
+pareto_combined <- wrap_plots(pareto_panels, ncol = 2)
+
+ggsave(figure_path("central_pareto_overview.pdf"), pareto_combined,
+       width = 11, height = 9, device = cairo_pdf)
+ggsave(figure_path("central_pareto_overview_preview.png"), pareto_combined,
+       width = 11, height = 9, dpi = 150)

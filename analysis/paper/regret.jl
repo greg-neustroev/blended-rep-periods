@@ -33,8 +33,13 @@ function export_regret()
         by_seed = vcat(by_seed, sub; cols=:union)
 
         # Pareto-frontier and per-group "reasonable" flags, computed with common.jl's own
-        # functions so the figures can never disagree with the console diagnostic.
-        nondom = nondominated_keys(arms)
+        # functions so the figures can never disagree with the console diagnostic. Computed
+        # PER NORMALIZATION (not once over the pooled economic+unscaled+minmax rows): otherwise a
+        # cell could be excluded from the frontier because some OTHER normalization's cell
+        # dominates it, even though it is itself non-dominated within its own normalization -- the
+        # figure only ever plots one normalization at a time, so cross-normalization domination
+        # would mark points as "not on the frontier" for a comparison the plot never actually makes.
+        nondom = union((nondominated_keys(arms[arms.normalization .== nrm, :]) for nrm in ordered_norms(arms))...)
         for nrm in ordered_norms(arms), n in sort(unique(arms.n_rep_periods))
             g = arms[(arms.normalization .== nrm) .& (arms.n_rep_periods .== n), :]
             isempty(g) && continue
