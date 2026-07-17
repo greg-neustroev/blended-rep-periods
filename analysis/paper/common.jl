@@ -2,10 +2,14 @@
 #
 # Shared helpers for the paper's data-export scripts: each script under analysis/paper/ is Stage 1
 # of the paper's two-stage data pipeline, reducing the raw experiment output CSVs/Arrow dumps under
-# outputs/ into tidy CSVs written into the PAPER repo's data/ directory, shaped to match the .tex
-# table/prose paragraph they back (see the header comment of each script for its target). Stage 2
-# (R scripts under analysis/R/, or hand-transcription into a table) reads ONLY those CSVs, so
-# regenerating a figure never requires re-running this pipeline or having a solver license.
+# outputs/ into tidy CSVs, shaped to match the .tex table/prose paragraph they back (see the header
+# comment of each script for its target). Stage 2 (R scripts under analysis/R/, or hand-
+# transcription into a table) reads ONLY those CSVs, so regenerating a figure never requires
+# re-running this pipeline or having a solver license.
+#
+# Everything stays inside THIS repo (analysis/output/data/) — this pipeline never writes into the
+# sibling `clustering` (paper) repo directly. Copying the finished CSVs/figures over is a separate,
+# deliberate step the user does by hand.
 #
 # `include`s analysis/common.jl for the regret/mismatch/statistics primitives shared with the
 # console diagnostic tool (summarize.jl), and adds the export-pipeline-specific pieces: output
@@ -16,7 +20,7 @@
 
 isdefined(Main, :METHOD_ORDER) || include(joinpath(@__DIR__, "..", "common.jl"))
 
-const OUTDIR = length(ARGS) >= 1 ? ARGS[1] : normpath(joinpath(REPO_ROOT, "..", "clustering", "data"))
+const OUTDIR = length(ARGS) >= 1 ? ARGS[1] : normpath(joinpath(REPO_ROOT, "analysis", "output", "data"))
 mkpath(OUTDIR)
 
 # Case study -> (case_study id, problem_class, source). RTS deliberately excluded here — the

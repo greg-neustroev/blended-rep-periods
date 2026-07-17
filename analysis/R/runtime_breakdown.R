@@ -8,24 +8,36 @@
 # {10,20,40,80}; a dashed horizontal line marks that case study's full-horizon (n_rep=1) reference
 # solve time, so the reader can see directly whether the reduced model is actually cheaper.
 #
-# Source data: clustering/data/runtime_breakdown.csv (produced by
-# experiments/analysis/paper/runtime_breakdown.jl from the raw per-run outputs).
+# Source data: analysis/output/data/runtime_breakdown.csv, IN THIS REPO (produced by
+# analysis/paper/runtime_breakdown.jl from the raw per-run outputs). This script is fully
+# self-contained within the experiments repo -- it never reads from or writes into the sibling
+# `clustering` repo; copying the finished figure over is a separate, manual step.
 #
-# Output: clustering/figures/runtime_breakdown.pdf (+ a PNG preview).
+# Output: analysis/output/figures/runtime_breakdown.pdf (+ a PNG preview).
 
 library(ggplot2)
 library(dplyr)
 library(patchwork)
 
-# Bootstrap: locate this script's own directory (works under `Rscript` regardless of the
-# invoker's cwd, unlike a bare relative path) so common.R's data_path()/figure_path() resolve
-# correctly no matter where runtime_breakdown.R is run from.
-.self_path <- {
-  file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
-  if (length(file_arg) > 0) normalizePath(sub("^--file=", "", file_arg[1]))
-  else normalizePath(sys.frames()[[1]]$ofile)
-}
-source(file.path(dirname(.self_path), "common.R"))
+# Bootstrap: walk up from the current working directory to find the repo root (marked by
+# Project.toml), then source common.R from there. Deliberately NOT based on introspecting this
+# script's own file path (`commandArgs()`'s `--file=`, or scanning `sys.frames()` for an `ofile`)
+# -- that approach is runner-dependent and broke under at least one editor's "Run file" mechanism
+# with "Could not determine this script's own file path". Only requires the R process's working
+# directory to be at or below the repo root, true for every normal way of launching R here.
+.repo_root_bootstrap <- local({
+  dir <- normalizePath(getwd(), mustWork = TRUE)
+  repeat {
+    if (file.exists(file.path(dir, "Project.toml"))) break
+    parent <- dirname(dir)
+    if (parent == dir) {
+      stop("Could not find the repo root (looked for Project.toml walking up from ", getwd(), ")")
+    }
+    dir <- parent
+  }
+  dir
+})
+source(file.path(.repo_root_bootstrap, "analysis", "R", "common.R"))
 
 df <- read.csv(data_path("runtime_breakdown.csv"))
 
