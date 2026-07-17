@@ -329,6 +329,7 @@ make_pareto_plot <- function(case, show_x_title = TRUE, show_y_title = TRUE) {
   pareto_pts <- d %>% filter(pareto_frontier) %>% arrange(time_mean_s)
   other_pts <- d %>% filter(!pareto_frontier)
   y_cap <- min(REGRET_CAP, max(d$regret_mean_pct))
+  y_floor <- max(0, min(d$regret_mean_pct) - 0.05 * (y_cap - min(d$regret_mean_pct)))
 
   # Clustering (color): each panel gets its OWN legend, restricted to just the clustering methods
   # that actually appear on THIS case study's Pareto front (not the full 7-category list) -- a
@@ -344,7 +345,7 @@ make_pareto_plot <- function(case, show_x_title = TRUE, show_y_title = TRUE) {
   ggplot() +
     geom_point(data = other_pts,
                aes(x = time_mean_s, y = regret_mean_pct, color = clustering_label, shape = weight_label),
-               size = 1, alpha = 0.35, stroke = 0.6) +
+               size = 1.8, alpha = 0.35, stroke = 0.8) +
     geom_segment(data = pareto_pts,
                  aes(x = xmin, xend = xmax, y = regret_mean_pct, yend = regret_mean_pct),
                  color = "grey40", alpha = 0.6, linewidth = 0.4) +
@@ -353,7 +354,7 @@ make_pareto_plot <- function(case, show_x_title = TRUE, show_y_title = TRUE) {
     geom_point(data = pareto_pts,
                aes(x = time_mean_s, y = regret_mean_pct, color = clustering_label, shape = weight_label),
                size = 3.2, stroke = 1.2) +
-    coord_cartesian(ylim = c(0, y_cap)) +
+    coord_cartesian(ylim = c(y_floor, y_cap)) +
     scale_x_log10(name = if (show_x_title) "Total time [s]" else NULL, labels = y_labels) +
     scale_y_continuous(name = if (show_y_title) "Regret [%]" else NULL, labels = y_labels) +
     scale_color_manual(name = "Pareto-optimal\nclustering types", values = clustering_colors,
@@ -365,7 +366,7 @@ make_pareto_plot <- function(case, show_x_title = TRUE, show_y_title = TRUE) {
     theme(legend.position = "inside", legend.position.inside = c(0.98, 0.98),
           legend.justification = c(1, 1), legend.box = "vertical",
           legend.background = element_rect(fill = alpha("white", 0.75), color = NA),
-          legend.key = element_rect(fill = alpha("white", 0)))
+          legend.key = element_blank())
 }
 
 # One combined 2x2 figure (case_titles' order: GEP, 5-bus, P2X, 118-bus); each panel keeps its OWN
