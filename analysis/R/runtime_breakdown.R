@@ -1,16 +1,12 @@
 # runtime_breakdown.R -- Figure 3 (runtime_breakdown): wall-clock time (s) per pipeline stage vs.
 # n_rep_periods, for all four realistic case studies (5-bus, GEP, P2X, 118-bus).
 #
-# Each case study is one 2-row block of panels, one panel per method (full clustering+weight names,
-# not single-letter codes): PROPOSED (conical hull + convex weights) against a representative
-# baseline spread that varies clustering method and weight type independently against it --
-# k-means/Hierarchical/Chronological at Dirac (the conventional pairing), k-means/Hierarchical
-# re-paired with PROPOSED's own (convex) weight type, and PROPOSED's own clustering method (conic
-# hull) re-paired with Dirac -- see analysis/paper/runtime_breakdown.jl's RUNTIME_METHODS for the
-# exact list. Within a panel, bars are stacked by pipeline stage (read/preprocess, cluster, fit
-# weights, formulate model, solve) across n_rep_periods in {10,20,40,80}; a dashed horizontal line
-# marks that case study's full-horizon (n_rep=1) reference solve time, so the reader can see
-# directly whether the reduced model is actually cheaper.
+# One grid: rows = case study, columns = clustering method (k-means, Hierarchical, Chronological,
+# Convex hull). Within each panel, one pair of adjacent stacked columns per n_rep_periods value --
+# Dirac and Convex weights side by side -- each stacked by pipeline stage (read/preprocess,
+# cluster, fit weights, formulate model, solve). A dashed horizontal line marks that case study's
+# full-horizon (n_rep=1) reference solve time, so the reader can see directly whether the reduced
+# model is actually cheaper.
 #
 # Source data: analysis/output/data/runtime_breakdown.csv, IN THIS REPO (produced by
 # analysis/paper/runtime_breakdown.jl from the raw per-run outputs). This script is fully
@@ -21,7 +17,6 @@
 
 library(ggplot2)
 library(dplyr)
-library(patchwork)
 
 # Bootstrap: walk up from the current working directory to find the repo root (marked by
 # Project.toml), then source common.R from there. Deliberately NOT based on introspecting this
@@ -48,11 +43,12 @@ df <- read.csv(data_path("runtime_breakdown.csv"))
 case_titles <- c(`5bus` = "5-bus", gep = "GEP", p2x = "P2X", `118bus` = "118-bus")
 case_order <- names(case_titles)
 
-# Full clustering+weight names (not single-letter codes), in the display order set by
-# RUNTIME_METHODS in analysis/paper/runtime_breakdown.jl.
-method_order <- c("k-means, Dirac", "Hierarchical, Dirac", "Chronological, Dirac", "Conic, Dirac",
-                   "k-means, Convex", "Hierarchical, Convex", 
-                   "Conic, Convex (proposed)")
+clustering_names <- c(k_means = "k-means", hierarchical = "Hierarchical",
+                       chronological = "Chronological", convex_hull = "Convex hull")
+clustering_order <- names(clustering_names)
+
+weight_names <- c(dirac = "Dirac", convex = "Convex")
+weight_order <- names(weight_names)
 
 stage_names <- c(
   read_preprocess = "Read/preprocess",
@@ -63,33 +59,44 @@ stage_names <- c(
 )
 stage_order <- names(stage_names)
 
-# Okabe-Ito-derived 5-color subset (colorblind-safe), one per pipeline stage -- a different
-# encoding axis from regret.R's clustering-method/weight-type palettes, so this figure never
-# borrows a hue with a different meaning elsewhere in the paper.
-stage_colors <- c("#0072B2", "#56B4E9", "#009E73", "#E69F00", "#D55E00")
+# Viridis (perceptually uniform, colorblind-safe, and stays distinguishable when printed in
+# grayscale) for the 5 pipeline stages -- a different encoding axis from regret.R's
+# clustering-method/weight-type palettes, so this figure never borrows a hue with a different
+# meaning elsewhere in the paper.
+stage_colors <- viridisLite::viridis(5, end = 0.92)
 
 panels <- df %>%
-  filter(method_label %in% method_order, stage %in% stage_order) %>%
+  filter(clustering_type %in% clustering_order, weight_type %in% weight_order, stage %in% stage_order) %>%
   mutate(
     case_label = factor(case_titles[case_study], levels = unname(case_titles)),
-    method_label_disp = factor(method_label, levels = method_order),
+    clustering_label = factor(clustering_names[clustering_type], levels = unname(clustering_names)),
+    weight_label = factor(weight_names[weight_type], levels = unname(weight_names)),
     stage_label = factor(stage_names[stage], levels = rev(unname(stage_names))),
     n_rep_factor = factor(n_rep_periods, levels = c(10, 20, 40, 80))
   )
+# x-axis: one pair of adjacent bars (Dirac, Convex) per n_rep value -- built directly as
+# "n_rep\nweight" strings (not via interaction(), whose default arg order put weight first and
+# silently produced all-NA levels against the n_rep-first level list below) so each n_rep's pair
+# stays adjacent and the four pairs read left to right in increasing n_rep order.
+panels$x_group <- paste(panels$n_rep_factor, panels$weight_label, sep = "\n")
+x_levels <- as.vector(t(outer(levels(panels$n_rep_factor), levels(panels$weight_label),
+                               FUN = function(n, w) paste(n, w, sep = "\n"))))
+panels$x_group <- factor(panels$x_group, levels = x_levels)
 
 ref_lines <- df %>%
   filter(method_label == "full_reference") %>%
-  transmute(case_label = factor(case_titles[case_study], levels = unname(case_titles)),
-            ref_time_s = time_mean_s)
+  transmute(case_label = factor(case_titles[case_study], levels = unname(case_titles)), ref_time_s = time_mean_s)
 
 base_theme <- theme_minimal(base_size = 12) +
   theme(
     panel.grid.minor = element_blank(),
-    panel.spacing = unit(10, "pt"),
+    panel.spacing = unit(8, "pt"),
     plot.margin = margin(2, 2, 2, 2),
-    strip.text = element_text(face = "bold", size = 10),
+    strip.text = element_text(face = "bold", size = 11),
+    strip.text.y = element_text(angle = 0, hjust = 0),
     axis.title.x = element_text(size = 13),
     axis.title.y = element_text(size = 13),
+    axis.text.x = element_text(size = 8),
     legend.position = "bottom",
     legend.title = element_text(size = 12),
     legend.text = element_text(size = 11)
@@ -97,34 +104,17 @@ base_theme <- theme_minimal(base_size = 12) +
 
 y_labels <- function(x) format(x, scientific = FALSE, trim = TRUE, drop0trailing = TRUE)
 
-# One 2-row block per case study (own y-axis scale, since total time spans two-plus orders of
-# magnitude across case studies), one panel per method (full clustering+weight name, wrapped 4+3
-# across two rows so the longer labels stay legible); bars stacked by pipeline stage. The n_rep=1
-# full-horizon reference time is a dashed horizontal line spanning every method panel in that case
-# study's block, so the "does reduction actually save time" comparison is direct.
-make_row <- function(case) {
-  d <- panels %>% filter(case_study == case)
-  ref <- ref_lines %>% filter(case_label == case_titles[[case]])
-  ref_y <- if (nrow(ref) > 0) ref$ref_time_s[1] else NA_real_
+panels <- panels %>% left_join(ref_lines, by = "case_label")
 
-  ggplot(d, aes(x = n_rep_factor, y = time_mean_s, fill = stage_label)) +
-    geom_col(width = 0.7) +
-    { if (!is.na(ref_y)) geom_hline(yintercept = ref_y, linetype = "dashed", linewidth = 0.6, color = "grey30") } +
-    facet_wrap(~method_label_disp, nrow = 2) +
-    scale_fill_manual(name = "Pipeline stage", values = stage_colors, breaks = unname(stage_names)) +
-    scale_y_continuous(name = paste0(case_titles[[case]], "\ntime [s]"), labels = y_labels) +
-    scale_x_discrete(name = if (case == case_order[length(case_order)]) "# RP" else NULL) +
-    base_theme
-}
+p <- ggplot(panels, aes(x = x_group, y = time_mean_s, fill = stage_label)) +
+  geom_col(width = 0.8) +
+  geom_hline(aes(yintercept = ref_time_s), linetype = "dashed", linewidth = 0.6, color = "grey30",
+             na.rm = TRUE) +
+  facet_grid(case_label ~ clustering_label, scales = "free_y", switch = "y") +
+  scale_fill_manual(name = "Pipeline stage", values = stage_colors, breaks = unname(stage_names)) +
+  scale_y_continuous(name = NULL, labels = y_labels) +
+  scale_x_discrete(name = "# RP, weight type") +
+  base_theme
 
-rows <- lapply(case_order, make_row)
-
-# One shared legend (pipeline-stage fill), collected via patchwork's plot_layout(guides="collect")
-# -- exactly the mechanism regret.R already relies on -- and de-duplicated to one copy at the
-# bottom, rather than repeated once per case-study block.
-final <- wrap_plots(rows, ncol = 1) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-
-ggsave(figure_path("runtime_breakdown.pdf"), final, width = 10, height = 18, device = cairo_pdf, limitsize = FALSE)
-ggsave(figure_path("runtime_breakdown_preview.png"), final, width = 10, height = 18, dpi = 150, limitsize = FALSE)
+ggsave(figure_path("runtime_breakdown.pdf"), p, width = 11, height = 11, device = cairo_pdf, limitsize = FALSE)
+ggsave(figure_path("runtime_breakdown_preview.png"), p, width = 11, height = 11, dpi = 150, limitsize = FALSE)
