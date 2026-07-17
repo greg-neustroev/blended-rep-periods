@@ -36,6 +36,7 @@ include(joinpath(@__DIR__, "normalization_realistic.jl"));    export_normalizati
 include(joinpath(@__DIR__, "normalization_minmax_5bus.jl"));  export_normalization_minmax_5bus()
 include(joinpath(@__DIR__, "prose_callouts_regret.jl"));      export_prose_callouts_regret()
 include(joinpath(@__DIR__, "prose_callouts_runtime.jl"));     export_prose_callouts_runtime()
+include(joinpath(@__DIR__, "prose_callouts_pareto.jl"));      export_prose_callouts_pareto()
 include(joinpath(@__DIR__, "provenance.jl"));                 export_provenance()
 
 println("Done.")

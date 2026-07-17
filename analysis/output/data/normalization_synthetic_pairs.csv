@@ -1,0 +1,4 @@
+normA,normB,n_total,n_comparable,n_a_better,n_b_better,mean_diff_pp
+economic,unscaled,31,18,12,1,-1.1079024422847232
+economic,minmax,31,17,14,0,-2.398155097228323
+unscaled,minmax,31,21,9,1,-1.2902526549436004

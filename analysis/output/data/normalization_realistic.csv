@@ -1,0 +1,5 @@
+case_study,n_total,n_comparable,n_peak_better,n_economic_better,mean_diff_pp_peak_minus_economic
+gep,112,53,37,22,-21.606749250103373
+5bus,112,31,70,11,-66.55193396017498
+p2x,112,90,14,8,0.5254821694948559
+118bus,112,103,5,4,0.014554902704137016

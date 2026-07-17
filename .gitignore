@@ -32,7 +32,8 @@ JuliaLocalPreferences.toml
 .vscode
 .Rproj.user
 .Rproj
-.arrow
+.Rhistory
+*.arrow
 plots
 
 # Python bytecode
@@ -41,8 +42,8 @@ __pycache__/
 
 # Regenerable synthetic knob-study variants (python3 scripts/gen_synth_sensitivity.py study)
 inputs/synth/knobs/
-outputs/synth/
 
 # Regenerable paper data/figures (analysis/paper/*.jl, analysis/R/*.R); copied into the
 # `clustering` repo by hand when ready to update the paper.
-analysis/output/
+analysis/R/.Rhistory
+analysis/R/R.Rproj

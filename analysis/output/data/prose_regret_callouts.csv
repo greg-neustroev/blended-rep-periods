@@ -1,0 +1,9 @@
+case_study,callout,min_pct,min_sd,min_method,max_pct,max_sd,max_method
+5bus,clustering_varies_dirac_weight_n_rp20,1.220117351678729,0.0,conical_hull,662.3589713327694,382.6,k_means
+5bus,weight_varies_conical_hull_clustering_n_rp20,1.0559757454256635,0.0,conical_bounded,3.587713899091205,0.0,conical
+gep,clustering_varies_dirac_weight_n_rp20,1.8566117625454346,0.0,convex_hull_with_null,172.52191466163228,54.1,k_means
+gep,weight_varies_conical_hull_clustering_n_rp20,6.680006574935193,0.0,dirac,10.223630711389763,0.0,conical_bounded
+p2x,weight_varies_conical_hull_clustering_n_rp20,4.834195917779693,0.0,conical_bounded,10.221866833997929,0.0,dirac
+p2x,clustering_varies_dirac_weight_n_rp20,8.738374739805929,2.7,k_means,14.33971258784772,0.0,chronological
+118bus,weight_varies_conical_hull_clustering_n_rp20,0.7701373045146065,0.0,conical,1.9824729557257559,0.0,dirac
+118bus,clustering_varies_dirac_weight_n_rp20,0.7719487197667796,0.0,k_means,3.5363533799970925,0.0,chronological

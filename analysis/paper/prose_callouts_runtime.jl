@@ -27,6 +27,7 @@ function export_prose_callouts_runtime()
         refrows = df[df.n_rep_periods .== 1, :]
         rt = collect(skipmissing(getcol(refrows, :time_to_solve)))
         ref_s = isempty(rt) ? missing : mean(rt)
+        ref_sd_s = length(rt) > 1 ? std(rt) : 0.0
 
         prop = arms[(arms.normalization .== "economic") .& (arms.clustering_type .== PROPOSED[1]) .&
                     (arms.weight_type .== PROPOSED[2]), :]
@@ -34,8 +35,10 @@ function export_prose_callouts_runtime()
             sub = prop[prop.n_rep_periods .== n, :]
             isempty(sub) && continue
             total_s = mean(sub.total_time)
+            total_sd_s = nrow(sub) > 1 ? std(sub.total_time) : 0.0
             push!(out, (case_study = meta.case_study, n_rep_periods = n, proposed_total_time_s = total_s,
-                        full_reference_time_s = ref_s,
+                        proposed_total_time_sd_s = total_sd_s,
+                        full_reference_time_s = ref_s, full_reference_time_sd_s = ref_sd_s,
                         proposed_faster_than_reference = ismissing(ref_s) ? missing : total_s < ref_s
                        ); cols=:union)
         end

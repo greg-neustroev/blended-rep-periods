@@ -54,12 +54,13 @@ function export_regret()
                 (m_t, s_t) = meanstd(rows, :total_time)
                 (m_m, s_m) = meanstd(rows, :mismatch_pct)
                 sdr = isempty(s_r) ? 0.0 : parse(Float64, replace(s_r, "±" => ""))
+                sdt = isempty(s_t) ? 0.0 : parse(Float64, replace(s_t, "±" => ""))
                 push!(summary, (
                     case_study = meta.case_study, problem_class = meta.problem_class, source = meta.source,
                     n_rep_periods = n, clustering_type = cl, weight_type = w, normalization = nrm,
                     n_seeds = nrow(rows), regret_mean_pct = something(m_r, NaN), regret_sd_pct = sdr,
                     mismatch_mean_pct = something(m_m, NaN),
-                    time_mean_s = something(m_t, NaN),
+                    time_mean_s = something(m_t, NaN), time_sd_s = sdt,
                     is_deterministic = sdr < 1e-9,
                     pareto_frontier = (nrm, n, cl, w) in nondom,
                     reasonable_in_group = (cl, w) in tied,

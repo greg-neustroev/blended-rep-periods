@@ -1,0 +1,20 @@
+[julia]
+version = "1.12.6"
+
+[system]
+machine = "arm64-apple-darwin24.0.0"
+cpu = "Apple M4 Pro"
+threads = 8
+total_memory_gb = 48.0
+hostname = "velox"
+
+[git]
+experiments_commit = "df39ae575513214561a94bea337035911dd5a226"
+
+[packages]
+Arrow = "2.8.1"
+Distances = "0.10.12"
+Gurobi = "1.9.2"
+Clustering = "0.15.8"
+DuckDB = "1.5.2"
+JuMP = "1.30.1"

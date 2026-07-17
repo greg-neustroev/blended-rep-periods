@@ -112,7 +112,7 @@ base_theme <- theme_minimal(base_size = 14) +
     panel.grid.minor = element_blank(),
     panel.grid.major.x = element_blank(),
     panel.spacing = unit(8, "pt"),
-    plot.margin = margin(2, 8, 2, 2),
+    plot.margin = margin(16, 2, 2, 2),
     strip.text = element_text(face = "bold", size = 13, angle = 0),
     plot.title = element_text(face = "bold", size = 16),
     axis.title.x = element_text(size = 14),

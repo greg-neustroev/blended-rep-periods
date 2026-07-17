@@ -5,6 +5,13 @@
 # configuration (conical hull, convex weights, n_rep=20), for all four real case studies — loss-of-
 # load in MWh and as a % of annual demand, spillage in MWh, and borrow in MWh + its cost.
 #
+# Also reports solution mismatch (Section~subsec:regret) at this same PROPOSED configuration next
+# to the range across the four CONVENTIONAL clustering methods restricted to Dirac weights (the
+# comparison already used elsewhere in this section, e.g. "Holding weight type fixed at Dirac and
+# varying clustering method"), so the closing paragraph can say whether the recommended
+# configuration's reliability (not just its feasibility slack) compares favorably to the baselines,
+# at the SAME n_rep=20.
+#
 # Loss-of-load is dispatch from the virtual "ENS" generator (assets.csv technology=="ENS", priced
 # at VOLL) — summed from eval_power_out.arrow, the same Arrow-dump pattern
 # curtailment_renewable.jl uses for true renewable curtailment. Spillage/borrow come straight off
@@ -55,6 +62,14 @@ function export_feasibility_slack()
         ens = loss_of_load_mwh(ds, dsname, FOCUS_NRP)
         demand = total_demand_mwh(ds)
 
+        proposed_mismatch = collect(skipmissing(getcol(sub, :mismatch_pct)))
+        conv = arms[(arms.normalization .== "economic") .& in.(arms.clustering_type, Ref(CONVENTIONAL)) .&
+                    (arms.weight_type .== "dirac") .& (arms.n_rep_periods .== FOCUS_NRP), :]
+        conv_mismatch = collect(skipmissing(getcol(conv, :mismatch_pct)))
+        conv_by_method = isempty(conv_mismatch) ? NamedTuple[] :
+            [(clustering_type = cl, mismatch_pct = mean(collect(skipmissing(getcol(conv[conv.clustering_type .== cl, :], :mismatch_pct)))))
+             for cl in CONVENTIONAL if !isempty(conv[conv.clustering_type .== cl, :])]
+
         push!(out, (
             case_study = case_study, n_rep_periods = FOCUS_NRP,
             loss_of_load_mwh = ens, loss_of_load_pct_of_demand = (ismissing(ens) || demand <= 0) ? missing : 100 * ens / demand,
@@ -62,6 +77,9 @@ function export_feasibility_slack()
             borrow_mwh = isempty(borrow) ? missing : mean(borrow),
             borrow_cost = isempty(borrow_cost) ? missing : mean(borrow_cost),
             annual_demand_mwh = demand,
+            proposed_mismatch_pct = isempty(proposed_mismatch) ? missing : mean(proposed_mismatch),
+            conventional_dirac_mismatch_min_pct = isempty(conv_by_method) ? missing : minimum(r.mismatch_pct for r in conv_by_method),
+            conventional_dirac_mismatch_max_pct = isempty(conv_by_method) ? missing : maximum(r.mismatch_pct for r in conv_by_method),
         ); cols=:union)
     end
     write_csv("feasibility_slack.csv", out)

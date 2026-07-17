@@ -25,8 +25,8 @@ function regret_range(df, case_study, varying, fixed_col, fixed_value)
     g = g[.!isnan.(g.regret_mean_pct), :]
     isempty(g) && return nothing
     lo = argmin(g.regret_mean_pct); hi = argmax(g.regret_mean_pct)
-    (min_pct = g.regret_mean_pct[lo], min_method = string(getproperty(g, varying)[lo]),
-     max_pct = g.regret_mean_pct[hi], max_method = string(getproperty(g, varying)[hi]))
+    (min_pct = g.regret_mean_pct[lo], min_sd = g.regret_sd_pct[lo], min_method = string(getproperty(g, varying)[lo]),
+     max_pct = g.regret_mean_pct[hi], max_sd = g.regret_sd_pct[hi], max_method = string(getproperty(g, varying)[hi]))
 end
 
 function export_prose_callouts_regret()
@@ -37,8 +37,9 @@ function export_prose_callouts_regret()
 
     out = DataFrame()
     add(case_study, callout, r) = r === nothing ? nothing : push!(out, (
-        case_study = case_study, callout = callout, min_pct = r.min_pct, min_method = r.min_method,
-        max_pct = r.max_pct, max_method = r.max_method); cols=:union)
+        case_study = case_study, callout = callout,
+        min_pct = r.min_pct, min_sd = r.min_sd, min_method = r.min_method,
+        max_pct = r.max_pct, max_sd = r.max_sd, max_method = r.max_method); cols=:union)
 
     for cs in ("5bus", "gep")
         add(cs, "clustering_varies_dirac_weight_n_rp20",
