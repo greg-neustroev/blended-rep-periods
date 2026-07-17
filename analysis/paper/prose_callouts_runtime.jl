@@ -26,7 +26,7 @@ function export_prose_callouts_runtime()
         ref_rows = d[d.method_label .== "full_reference", :]
         ref_s = isempty(ref_rows) ? missing : sum(ref_rows.time_mean_s)
         for n in sort(unique(d.n_rep_periods[d.n_rep_periods .!= 1]))
-            prop = d[(d.method_label .== "PROPOSED") .& (d.n_rep_periods .== n), :]
+            prop = d[(d.method_label .== "Conic, Convex (proposed)") .& (d.n_rep_periods .== n), :]
             isempty(prop) && continue
             total_s = sum(prop.time_mean_s)
             push!(out, (case_study = cs, n_rep_periods = n, proposed_total_time_s = total_s,
