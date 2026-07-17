@@ -92,7 +92,9 @@ panels$x_group <- paste(panels$n_rep_factor, weight_letter[as.character(panels$w
 n_rep_levels <- levels(panels$n_rep_factor)
 x_levels <- unlist(lapply(seq_along(n_rep_levels), function(i) {
   pair <- paste(n_rep_levels[i], unname(weight_letter[levels(panels$weight_label)]))
-  if (i < length(n_rep_levels)) c(pair, paste0(".spacer", i)) else pair
+  # two spacer slots (not one): with larger axis text, a single slot wasn't enough gap to keep the
+  # left-aligned label from visually running into the next group's bars.
+  if (i < length(n_rep_levels)) c(pair, paste0(".spacer", i, "a"), paste0(".spacer", i, "b")) else pair
 }))
 panels$x_group <- factor(panels$x_group, levels = x_levels)
 # One combined tick label per pair ("D / 10 / C"), placed at the D bar's position only -- the C
@@ -105,21 +107,22 @@ ref_lines <- df %>%
   filter(method_label == "full_reference") %>%
   transmute(case_study, ref_time_s = time_mean_s)
 
-base_theme <- theme_minimal(base_size = 12) +
+base_theme <- theme_minimal(base_size = 14) +
   theme(
     panel.grid.minor = element_blank(),
     panel.grid.major.x = element_blank(),
     panel.spacing = unit(8, "pt"),
     plot.margin = margin(2, 8, 2, 2),
-    strip.text = element_text(face = "bold", size = 11, angle = 0),
-    plot.title = element_text(face = "bold", size = 14),
-    axis.title.x = element_text(size = 12),
-    axis.title.y = element_text(size = 11),
-    axis.text.x = element_text(size = 8, hjust = 0),
+    strip.text = element_text(face = "bold", size = 13, angle = 0),
+    plot.title = element_text(face = "bold", size = 16),
+    axis.title.x = element_text(size = 14),
+    axis.title.y = element_text(size = 13),
+    axis.text.x = element_text(size = 10, hjust = 0),
+    axis.text.y = element_text(size = 11),
     axis.line.x = element_line(color = "black", linewidth = 0.4),
     legend.position = "bottom",
-    legend.title = element_text(size = 12),
-    legend.text = element_text(size = 11)
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 13)
   )
 
 y_labels <- function(x) format(round(x, 1), scientific = FALSE, trim = TRUE, drop0trailing = TRUE)
@@ -182,5 +185,5 @@ final <- wrap_plots(blocks, ncol = 1, heights = block_heights) +
   plot_layout(guides = "collect") &
   theme(legend.position = "bottom")
 
-ggsave(figure_path("runtime_breakdown.pdf"), final, width = 9, height = 9, device = cairo_pdf, limitsize = FALSE)
-ggsave(figure_path("runtime_breakdown_preview.png"), final, width = 9, height = 9, dpi = 150, limitsize = FALSE)
+ggsave(figure_path("runtime_breakdown.pdf"), final, width = 9, height = 9.9, device = cairo_pdf, limitsize = FALSE)
+ggsave(figure_path("runtime_breakdown_preview.png"), final, width = 9, height = 9.9, dpi = 150, limitsize = FALSE)
