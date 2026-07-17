@@ -95,6 +95,11 @@ x_levels <- unlist(lapply(seq_along(n_rep_levels), function(i) {
   if (i < length(n_rep_levels)) c(pair, paste0(".spacer", i)) else pair
 }))
 panels$x_group <- factor(panels$x_group, levels = x_levels)
+# One combined tick label per pair ("D / 10 / C"), placed at the D bar's position only -- the C
+# bar gets no label of its own -- so the two bars in a pair don't render two separate, overlapping
+# tick labels.
+x_tick_breaks <- paste(n_rep_levels, "D")
+x_tick_labels <- paste("D /", n_rep_levels, "/ C")
 
 ref_lines <- df %>%
   filter(method_label == "full_reference") %>%
@@ -143,8 +148,8 @@ make_block <- function(case, show_x_title, ref_time_s, bar_max_time_s) {
     scale_fill_manual(name = "Pipeline stage", values = stage_colors, breaks = unname(stage_names)) +
     scale_y_continuous(name = "Time [s]", breaks = y_breaks, labels = y_labels,
                        expand = expansion(mult = c(0, 0.05))) +
-    scale_x_discrete(name = if (show_x_title) "# RP, weight type (D/C)" else NULL,
-                     breaks = x_levels[!grepl("^\\.spacer", x_levels)], drop = FALSE) +
+    scale_x_discrete(name = if (show_x_title) "# RP, weight type (D = Dirac, C = Convex)" else NULL,
+                     breaks = x_tick_breaks, labels = x_tick_labels, drop = FALSE) +
     labs(title = case_titles[[case]]) +
     base_theme
 }
