@@ -330,13 +330,16 @@ make_pareto_plot <- function(case) {
   other_pts <- d %>% filter(!pareto_frontier)
   y_cap <- min(REGRET_CAP, max(d$regret_mean_pct))
 
-  # Each panel gets its OWN legend, restricted to just the clustering/weight combinations that
-  # actually appear on THIS case study's Pareto front (not the full 7/4-category list) -- a
-  # shared/collected legend across all four panels would otherwise show categories that never
-  # appear as Pareto-optimal here, and a global frontier-driven legend doesn't generalize across
-  # panels with different Pareto-optimal methods anyway.
+  # Clustering (color): each panel gets its OWN legend, restricted to just the clustering methods
+  # that actually appear on THIS case study's Pareto front (not the full 7-category list) -- a
+  # shared/collected legend across all four panels would otherwise show methods that never appear
+  # as Pareto-optimal here, and a global frontier-driven legend doesn't generalize across panels
+  # with different Pareto-optimal methods anyway. Colors are NAMED (not positional), so they stay
+  # identical to central_regret_overview.pdf regardless of which subset of levels is present here.
+  # Weight (shape): suppressed per panel -- it is the same 4-shape key everywhere, so it is shown
+  # ONCE as a shared legend below the combined grid instead (see below), not repeated x4.
   clust_breaks <- clustering_names[names(clustering_names) %in% unique(as.character(pareto_pts$clustering_type))]
-  weight_breaks <- weight_names[names(weight_names) %in% unique(as.character(pareto_pts$weight_type))]
+  clustering_colors <- setNames(okabe_ito, unname(clustering_names))
 
   ggplot() +
     geom_point(data = other_pts,
@@ -353,24 +356,33 @@ make_pareto_plot <- function(case) {
     coord_cartesian(ylim = c(0, y_cap)) +
     scale_x_log10(name = "Total time [s]", labels = y_labels) +
     scale_y_continuous(name = "Regret [%]", labels = y_labels) +
-    scale_color_manual(name = "Clustering (Pareto front)", values = okabe_ito,
+    scale_color_manual(name = "Pareto-optimal clustering types", values = clustering_colors,
                         breaks = unname(clust_breaks), limits = unname(clustering_names)) +
-    scale_shape_manual(name = "Weight (Pareto front)", values = weight_shapes,
-                        breaks = unname(weight_breaks), limits = unname(weight_names)) +
+    scale_shape_manual(values = weight_shapes, limits = unname(weight_names), guide = "none") +
     labs(title = case_titles[[case]]) +
-    guides(color = guide_legend(override.aes = list(size = 3.2, alpha = 1, stroke = 1.2)),
-           shape = guide_legend(override.aes = list(size = 3.2, alpha = 1, stroke = 1.2))) +
+    guides(color = guide_legend(override.aes = list(size = 3.2, alpha = 1, stroke = 1.2))) +
     base_theme +
     theme(legend.position = "right", legend.box = "vertical")
 }
 
 # One combined 2x2 figure (case_titles' order: GEP, 5-bus, P2X, 118-bus); each panel keeps its OWN
-# legend (see make_pareto_plot) rather than a shared/collected one, since the Pareto-optimal
-# clustering/weight combinations differ across case studies.
+# clustering (color) legend (see make_pareto_plot), since the Pareto-optimal clustering methods
+# differ across case studies. Weight (shape) is the same 4-shape key everywhere, so it is shown
+# ONCE, as a single-row legend below the whole grid: a blank (theme_void) dummy plot whose only
+# visible content is its own bottom legend, spanning both columns.
+weight_legend_plot <- ggplot(data.frame(w = factor(unname(weight_names), levels = unname(weight_names))),
+                              aes(x = 1, y = 1, shape = w)) +
+  geom_point(alpha = 0) +
+  scale_shape_manual(name = "Weight", values = weight_shapes, limits = unname(weight_names)) +
+  guides(shape = guide_legend(nrow = 1, override.aes = list(alpha = 1, size = 3.2, stroke = 1.2))) +
+  theme_void() +
+  theme(legend.position = "bottom", legend.title = element_text(size = 12), legend.text = element_text(size = 11))
+
 pareto_panels <- lapply(names(case_titles), make_pareto_plot)
-pareto_combined <- wrap_plots(pareto_panels, ncol = 2)
+pareto_grid <- wrap_plots(pareto_panels, ncol = 2)
+pareto_combined <- pareto_grid / weight_legend_plot + plot_layout(heights = c(1, 0.08))
 
 ggsave(figure_path("central_pareto_overview.pdf"), pareto_combined,
-       width = 11, height = 9, device = cairo_pdf)
+       width = 11, height = 9.3, device = cairo_pdf)
 ggsave(figure_path("central_pareto_overview_preview.png"), pareto_combined,
-       width = 11, height = 9, dpi = 150)
+       width = 11, height = 9.3, dpi = 150)
