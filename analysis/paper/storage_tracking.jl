@@ -41,7 +41,9 @@ function export_storage_tracking()
         # be seed-invariant for the n_rep=1 reference; average handles any residual solver noise).
         fullavg = combine(groupby(base, [:id, :day]), :value => (v -> mean(skipmissing(v))) => :full)
         full = Dict((string(r.id), Int(r.day)) => r.full for r in eachrow(fullavg))
-        for (cl, w) in [PROPOSED, ("k_means", "dirac"), ("k_medoids", "dirac")], n in (10, 20, 40, 80)
+        # "regardless of clustering method, weight type, or n_rep" (case_studies.tex) needs the
+        # FULL grid, not just PROPOSED + 2 baselines.
+        for (cl, w) in [(cl, w) for cl in METHOD_ORDER for w in WEIGHT_ORDER], n in (10, 20, 40, 80)
             pat = Regex("^" * dsname * "_$(n)_24_$(cl)_$(w)_0\\.01_economic\$")
             idx = findfirst(e -> occursin(pat, e), entries)
             idx === nothing && continue

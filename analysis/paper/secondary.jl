@@ -21,7 +21,14 @@ function export_secondary()
         loaded === nothing && continue
         arms = canonical(loaded.arms)
         grid = sort(unique(arms.n_rep_periods))
-        for (cl, w) in [PROPOSED, ("k_means", "dirac"), ("k_medoids", "dirac")], n in grid
+        # capacity_decisions.csv backs a "regardless of clustering method, weight type, or n_rep"
+        # claim, so it needs the FULL clustering x weight grid (not just PROPOSED + 2 baselines,
+        # which was too narrow a sample of the range the prose actually describes); curtailment.csv
+        # (superseded, low-confidence) keeps the narrower 3-combo sample since nothing still cites it.
+        all_combos = [(cl, w) for cl in METHOD_ORDER for w in WEIGHT_ORDER]
+        combos = meta.problem_class == "investment" ? all_combos :
+                 [PROPOSED, ("k_means", "dirac"), ("k_medoids", "dirac")]
+        for (cl, w) in combos, n in grid
             sub = arms[(arms.normalization .== "economic") .& (arms.clustering_type .== cl) .&
                        (arms.weight_type .== w) .& (arms.n_rep_periods .== n), :]
             isempty(sub) && continue
