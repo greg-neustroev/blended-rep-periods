@@ -356,7 +356,7 @@ make_pareto_plot <- function(case) {
     coord_cartesian(ylim = c(0, y_cap)) +
     scale_x_log10(name = "Total time [s]", labels = y_labels) +
     scale_y_continuous(name = "Regret [%]", labels = y_labels) +
-    scale_color_manual(name = "Pareto-optimal clustering types", values = clustering_colors,
+    scale_color_manual(name = "Pareto-optimal\nclustering types", values = clustering_colors,
                         breaks = unname(clust_breaks), limits = unname(clustering_names)) +
     scale_shape_manual(values = weight_shapes, limits = unname(weight_names), guide = "none") +
     labs(title = case_titles[[case]]) +
