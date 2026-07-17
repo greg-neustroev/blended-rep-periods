@@ -4,32 +4,37 @@
 # time (2.34s) staying just under its own reference (2.42s); for GEP... the reduced model's total
 # time overtakes the full-horizon reference between n_rep=40 (27.0s) and n_rep=80 (116.2s, vs. a
 # 72.8s reference)... P2X and 118-bus... (45.2s vs 65.4s, and 43.2s vs 73.7s, at n_rep=80)". One
-# row per case study x n_rep, PROPOSED's total time (summed over every pipeline stage) next to the
-# n_rep=1 full-horizon reference solve time, so each cited pair can be checked against the .tex.
-# Reads runtime_breakdown.csv (already written by runtime_breakdown.jl) rather than recomputing,
-# so this can never disagree with the figure it accompanies.
+# row per case study x n_rep, PROPOSED's (conical hull + convex weights) total time (summed over
+# every pipeline stage) next to the n_rep=1 full-horizon reference solve time, so each cited pair
+# can be checked against the .tex.
 #
-# Must run AFTER runtime_breakdown.jl (see run_all.jl's ordering).
+# Computed directly from the raw per-case-study CSVs (NOT from runtime_breakdown.csv): that CSV's
+# clustering grid is chosen for the figure's baseline spread and does not include conical_hull, so
+# it can no longer answer a PROPOSED-specific prose callout.
 #
 # Usage: julia --project=. analysis/paper/prose_callouts_runtime.jl [outdir]
 
 isdefined(Main, :write_csv) || include(joinpath(@__DIR__, "common.jl"))
 
 function export_prose_callouts_runtime()
-    path = joinpath(OUTDIR, "runtime_breakdown.csv")
-    isfile(path) || (@warn "no runtime_breakdown.csv in $OUTDIR — run runtime_breakdown.jl first"; return)
-    df = CSV.read(path, DataFrame)
-
     out = DataFrame()
-    for cs in unique(df.case_study)
-        d = df[df.case_study .== cs, :]
-        ref_rows = d[d.method_label .== "full_reference", :]
-        ref_s = isempty(ref_rows) ? missing : sum(ref_rows.time_mean_s)
-        for n in sort(unique(d.n_rep_periods[d.n_rep_periods .!= 1]))
-            prop = d[(d.method_label .== "Conic, Convex (proposed)") .& (d.n_rep_periods .== n), :]
-            isempty(prop) && continue
-            total_s = sum(prop.time_mean_s)
-            push!(out, (case_study = cs, n_rep_periods = n, proposed_total_time_s = total_s,
+    for (path, meta) in CASE_META
+        loaded = load_case(path)
+        loaded === nothing && (@warn "no reference optimum for $path — skipping"; continue)
+        arms = canonical(loaded.arms)
+        df = CSV.read(joinpath(REPO_ROOT, path), DataFrame)
+        for c in ("clustering_type", "weight_type", "normalization"); df[!, c] = string.(df[!, c]); end
+        refrows = df[df.n_rep_periods .== 1, :]
+        rt = collect(skipmissing(getcol(refrows, :time_to_solve)))
+        ref_s = isempty(rt) ? missing : mean(rt)
+
+        prop = arms[(arms.normalization .== "economic") .& (arms.clustering_type .== PROPOSED[1]) .&
+                    (arms.weight_type .== PROPOSED[2]), :]
+        for n in sort(unique(prop.n_rep_periods))
+            sub = prop[prop.n_rep_periods .== n, :]
+            isempty(sub) && continue
+            total_s = mean(sub.total_time)
+            push!(out, (case_study = meta.case_study, n_rep_periods = n, proposed_total_time_s = total_s,
                         full_reference_time_s = ref_s,
                         proposed_faster_than_reference = ismissing(ref_s) ? missing : total_s < ref_s
                        ); cols=:union)
