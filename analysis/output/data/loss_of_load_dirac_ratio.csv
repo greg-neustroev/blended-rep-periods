@@ -1,0 +1,5 @@
+case_study,dirac_worst_ratio,worst_combo
+5bus,1.204678851923871,k_means/n_rp=80
+gep,1.6093911054282692,chronological/n_rp=20
+p2x,1.0295291884907394,conical_hull/n_rp=10
+118bus,457.4414398922768,chronological/n_rp=10

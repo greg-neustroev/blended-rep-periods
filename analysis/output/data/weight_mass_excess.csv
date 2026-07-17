@@ -1,0 +1,5 @@
+case_study,n_configs,max_weight_sum_excess,n_configs_with_any_period_over_1,n_configs_total_with_frac_data
+gep,140,1.6637745943216524,140,140
+5bus,140,3.8539303413791846,140,140
+p2x,140,1.3526287382315314,140,140
+118bus,140,1.2699618339029557,140,140

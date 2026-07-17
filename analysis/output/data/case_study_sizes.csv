@@ -1,0 +1,6 @@
+case_study,n_nodes,n_generation,n_storage_short_term,n_storage_seasonal,n_conversion,n_lines,n_investable,n_timesteps,regret_type,max_buffer_days_min,max_buffer_days_max
+synthetic,1,2,0,3,0,0,0,2880,storage,60.00006294480684,60.00006294480742
+5bus,5,8,0,2,0,7,8,8760,investment,1.4499405891264068,5.799762356505627
+gep,20,106,0,0,0,44,106,8760,investment,,
+p2x,32,165,25,47,31,92,0,8760,storage,0.2702857048749097,6888.395803080686
+118bus,118,312,0,15,0,186,0,8760,storage,407.7676652647796,1043.1951754121992

@@ -1,0 +1,7 @@
+comparison,normalization,a,b,mean_diff,p_value,n_paired,n_a_better,n_b_better,n_comparable
+tol,economic,0.01,1.0e-5,-0.05410094514946007,0.0,5,,,
+tol,unscaled,0.01,1.0e-5,0.2909425090429574,0.0,5,,,
+tol,minmax,0.01,1.0e-5,0.10573828674900199,0.0,5,,,
+normalization,economic vs unscaled,,,-0.8260320862361059,0.0,1,0,0,1
+normalization,economic vs minmax,,,-0.678589018875253,0.0,1,0,0,1
+normalization,unscaled vs minmax,,,0.1474430673608529,0.0,1,0,0,1

@@ -1,0 +1,2 @@
+total_configurations,n_seeds_at_backstop,n_distinct_configurations_at_backstop,distinct_configurations
+1470,20,4,conical_hull/convex/economic/80/0.01; convex_hull/convex/economic/80/0.01; convex_hull/conical/economic/80/0.01; conical_hull/conical/economic/80/0.01
